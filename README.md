@@ -21,6 +21,45 @@
 
 ---
 
+## Installation
+
+### From source
+
+```bash
+git clone https://github.com/felipetrejos/felituive.git
+cd felituive
+make install
+```
+
+### Prerequisites
+
+[Ollama](https://ollama.ai/) running locally:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
+
+---
+
+## Usage
+
+Simply run the command to launch the interactive TUI:
+
+```bash
+felituive
+```
+
+Navigate using your keyboard:
+- `1` — Index a folder
+- `2` — Semantic search
+- `3` — Chat with your files
+- `q` — Quit
+
+All features are accessible from within the TUI — no subcommands needed.
+
+---
+
 ## Overview
 
 **felituive** is a local-first terminal UI for retrieval-augmented generation (RAG).
@@ -50,6 +89,20 @@ No external services are required by default. Remote backends can be enabled opt
 
 The TUI is backend-agnostic. Storage and retrieval are implemented behind a shared interface.
 
+```
+felituive/
+├── cmd/felituive/         # Entry point
+├── internal/
+│   ├── app/               # Application bootstrap
+│   ├── domain/            # Core business types
+│   ├── ports/             # Interface definitions
+│   ├── adapters/          # Backend implementations
+│   ├── services/          # Use cases & orchestration
+│   └── tui/               # Bubble Tea UI layer
+├── pkg/                   # Shared utilities
+└── configs/               # Default configuration
+```
+
 ---
 
 ## Core concepts
@@ -77,14 +130,43 @@ A chunk is a slice of text extracted from a file, along with:
 
 ---
 
-## Usage (planned)
+## Development
 
 ```bash
-# index a folder
-felituive index --corpus notes --path ~/notes
+# Build
+make build
 
-# open chat UI
-felituive chat --corpus notes
+# Run
+make run
 
-# open the main TUI
-felituive tui
+# Test
+make test
+
+# Build for all platforms
+make build-all
+```
+
+---
+
+## Configuration
+
+Configuration is stored in `~/.felituive/config.yaml`. See [configs/default.yaml](configs/default.yaml) for available options.
+
+---
+
+## Roadmap
+
+- [ ] Core indexing pipeline
+- [ ] SQLite vector storage
+- [ ] Semantic search
+- [ ] RAG chat with streaming
+- [ ] MongoDB Atlas backend
+- [ ] Watch mode (auto-reindex)
+- [ ] Session history
+- [ ] Multiple embedding models
+
+---
+
+## License
+
+MIT
