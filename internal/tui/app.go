@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -638,8 +639,9 @@ func (m Model) doUninstall() tea.Cmd {
 		configDir, _ := config.Dir()
 		os.RemoveAll(configDir)
 
-		// Remove binary from /usr/local/bin
-		os.Remove("/usr/local/bin/autoscan")
+		// Remove binary from ~/.local/bin
+		home, _ := os.UserHomeDir()
+		os.Remove(filepath.Join(home, ".local", "bin", "autoscan"))
 
 		return uninstallDoneMsg{}
 	}
@@ -1024,10 +1026,10 @@ func (m Model) renderSubmissions() string {
 		Bold(true).
 		Foreground(styles.Primary)
 
-	table.WriteString(headerStyle.Render(fmt.Sprintf("  %-4s %-45s %-10s %-30s %-6s",
-		"", "Submission", "Compile", "Banned", "Time")))
+	table.WriteString(headerStyle.Render(fmt.Sprintf("  %-4s  %-30s  %-7s  %s",
+		"", "Submission", "Compile", "Info")))
 	table.WriteString("\n")
-	table.WriteString(strings.Repeat("─", 105))
+	table.WriteString(strings.Repeat("─", 70))
 	table.WriteString("\n")
 
 	// Results list
@@ -1047,64 +1049,87 @@ func (m Model) renderSubmissions() string {
 		r := filtered[i]
 
 		// Status icon (missing files adds a warning marker)
-		statusIcon := "..."
+		// Status
+		var statusIcon, statusStyle string
 		switch r.Status {
 		case domain.StatusClean:
 			if r.Submission.HasMissingFiles() {
-				statusIcon = styles.WarningStyle.Render("[~]")
+				statusIcon, statusStyle = "[~]", "warning"
 			} else {
-				statusIcon = styles.SuccessStyle.Render("[OK]")
+				statusIcon, statusStyle = "[OK]", "success"
 			}
 		case domain.StatusBanned:
-			statusIcon = styles.WarningStyle.Render("[!]")
+			statusIcon, statusStyle = "[!]", "warning"
 		case domain.StatusFailed, domain.StatusTimedOut:
-			statusIcon = styles.ErrorStyle.Render("[X]")
+			statusIcon, statusStyle = "[X]", "error"
+		default:
+			statusIcon, statusStyle = "...", ""
 		}
 
 		// Compile status
-		compileStr := styles.SuccessStyle.Render("OK")
+		var compileStr, compileStyle string
 		if r.Compile.TimedOut {
-			compileStr = styles.WarningStyle.Render("TIMEOUT")
+			compileStr, compileStyle = "TIMEOUT", "warning"
 		} else if !r.Compile.OK {
-			compileStr = styles.ErrorStyle.Render("FAIL")
+			compileStr, compileStyle = "FAIL", "error"
+		} else {
+			compileStr, compileStyle = "OK", "success"
 		}
 
 		// Truncate ID if needed
 		id := r.Submission.ID
-		if len(id) > 43 {
-			id = "..." + id[len(id)-40:]
+		if len(id) > 30 {
+			id = "..." + id[len(id)-27:]
 		}
 
-		// Build info string: banned functions or missing files warning
-		infoStr := fmt.Sprintf("%d", r.Scan.TotalHits())
+		// Build simple info string (details in detail view)
+		var infoParts []string
 		if r.Scan.TotalHits() > 0 {
-			var funcs []string
-			for fn := range r.Scan.HitsByFunction {
-				funcs = append(funcs, fn)
-			}
-			infoStr = styles.WarningStyle.Render(fmt.Sprintf("%d (%s)", r.Scan.TotalHits(), strings.Join(funcs, ", ")))
+			infoParts = append(infoParts, fmt.Sprintf("Banned:%d", r.Scan.TotalHits()))
 		}
 		if r.Submission.HasMissingFiles() {
-			missing := styles.WarningStyle.Render("Missing: " + strings.Join(r.Submission.MissingFiles, ", "))
-			if r.Scan.TotalHits() > 0 {
-				infoStr = infoStr + " " + missing
-			} else {
-				infoStr = missing
-			}
+			infoParts = append(infoParts, fmt.Sprintf("Missing:%d", len(r.Submission.MissingFiles)))
+		}
+		infoStr := strings.Join(infoParts, " ")
+		if infoStr == "" {
+			infoStr = "-"
 		}
 
-		line := fmt.Sprintf("  %-4s %-45s %-10s %-30s %dms",
-			statusIcon,
-			id,
-			compileStr,
-			infoStr,
-			r.Compile.DurationMs)
+		paddedStatus := fmt.Sprintf("%-4s", statusIcon)
+		paddedId := fmt.Sprintf("%-30s", id)
+		paddedCompile := fmt.Sprintf("%-7s", compileStr)
 
+		var line string
 		if i == m.cursor {
-			table.WriteString(styles.SelectedItem.Render(line))
+			plainLine := fmt.Sprintf("  %s  %s  %s  %s", paddedStatus, paddedId, paddedCompile, infoStr)
+			line = styles.SelectedItem.Render(plainLine)
 		} else {
-			table.WriteString(line)
+			// Color the padded strings
+			coloredStatus := paddedStatus
+			switch statusStyle {
+			case "success":
+				coloredStatus = styles.SuccessStyle.Render(paddedStatus)
+			case "warning":
+				coloredStatus = styles.WarningStyle.Render(paddedStatus)
+			case "error":
+				coloredStatus = styles.ErrorStyle.Render(paddedStatus)
+			}
+			coloredCompile := paddedCompile
+			switch compileStyle {
+			case "success":
+				coloredCompile = styles.SuccessStyle.Render(paddedCompile)
+			case "warning":
+				coloredCompile = styles.WarningStyle.Render(paddedCompile)
+			case "error":
+				coloredCompile = styles.ErrorStyle.Render(paddedCompile)
+			}
+			coloredInfo := infoStr
+			if r.Scan.TotalHits() > 0 || r.Submission.HasMissingFiles() {
+				coloredInfo = styles.WarningStyle.Render(infoStr)
+			}
+			line = fmt.Sprintf("  %s  %s  %s  %s", coloredStatus, paddedId, coloredCompile, coloredInfo)
 		}
+		table.WriteString(line)
 		table.WriteString("\n")
 	}
 
@@ -1196,11 +1221,11 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	var b strings.Builder
 
 	if r.Compile.OK {
-		b.WriteString(styles.SuccessStyle.Render("✅ Compilation successful"))
+		b.WriteString(styles.SuccessStyle.Render("Compilation successful"))
 	} else if r.Compile.TimedOut {
-		b.WriteString(styles.ErrorStyle.Render("⏱️  Compilation timed out (5s limit)"))
+		b.WriteString(styles.ErrorStyle.Render("Compilation timed out (5s limit)"))
 	} else {
-		b.WriteString(styles.ErrorStyle.Render(fmt.Sprintf("❌ Compilation failed (exit %d)", r.Compile.ExitCode)))
+		b.WriteString(styles.ErrorStyle.Render(fmt.Sprintf("Compilation failed (exit %d)", r.Compile.ExitCode)))
 	}
 	b.WriteString("\n\n")
 
@@ -1241,14 +1266,22 @@ func (m Model) renderBannedTab(r domain.SubmissionResult) string {
 	var b strings.Builder
 
 	if r.Scan.TotalHits() == 0 {
-		b.WriteString(styles.SuccessStyle.Render("✅ No banned function calls detected"))
+		b.WriteString(styles.SuccessStyle.Render("No banned function calls detected"))
 		return b.String()
 	}
 
-	b.WriteString(styles.WarningStyle.Render(fmt.Sprintf("⚠️  %d banned call(s) found", r.Scan.TotalHits())))
+	b.WriteString(styles.WarningStyle.Render(fmt.Sprintf("%d banned call(s) found", r.Scan.TotalHits())))
 	b.WriteString("\n\n")
 
-	for fn, hits := range r.Scan.HitsByFunction {
+	// Sort function names for stable display
+	var funcNames []string
+	for fn := range r.Scan.HitsByFunction {
+		funcNames = append(funcNames, fn)
+	}
+	sort.Strings(funcNames)
+
+	for _, fn := range funcNames {
+		hits := r.Scan.HitsByFunction[fn]
 		b.WriteString(styles.Highlight.Render(fmt.Sprintf("%s (%d)", fn, len(hits))))
 		b.WriteString("\n")
 
@@ -1274,7 +1307,7 @@ func (m Model) renderFilesTab(r domain.SubmissionResult) string {
 	b.WriteString("\n\n")
 
 	for _, f := range r.Submission.CFiles {
-		b.WriteString(fmt.Sprintf("📄 %s\n", f))
+		b.WriteString(fmt.Sprintf("  %s\n", f))
 	}
 
 	if len(r.Scan.ParseErrors) > 0 {
@@ -1282,7 +1315,7 @@ func (m Model) renderFilesTab(r domain.SubmissionResult) string {
 		b.WriteString(styles.WarningStyle.Render("Parse errors:"))
 		b.WriteString("\n")
 		for _, e := range r.Scan.ParseErrors {
-			b.WriteString(fmt.Sprintf("  ⚠️  %s\n", e))
+			b.WriteString(fmt.Sprintf("  - %s\n", e))
 		}
 	}
 
