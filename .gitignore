@@ -1,5 +1,5 @@
 # Binaries
-felituive
+autoscan
 *.exe
 *.exe~
 *.dll
@@ -28,6 +28,9 @@ Thumbs.db
 # Local data
 *.db
 *.sqlite
+
+# Test data
+test_submissions/
 
 # Build
 dist/

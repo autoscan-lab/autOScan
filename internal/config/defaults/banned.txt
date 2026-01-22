@@ -1,0 +1,22 @@
+# Global Banned Functions
+# One function name per line. Lines starting with # are comments.
+# Uncomment functions you want to ban for your labs.
+
+# Dangerous functions
+system
+popen
+gets
+alloca
+
+fopen
+fclose
+fread
+fwrite
+fprintf
+fscanf
+
+printf
+scanf
+puts
+getchar
+putchar
