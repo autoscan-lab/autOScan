@@ -10,22 +10,10 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui"
 )
 
-func installPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "bin", "autoscan")
-}
-
 // Run initializes and starts the application
 func Run() error {
-	// Check for install/uninstall commands
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "install":
-			return install()
-		case "uninstall":
-			return uninstall()
-		}
-	}
+	// Auto-install to ~/.local/bin if not already there
+	autoInstall()
 
 	// Parse command line flags
 	var (
@@ -43,83 +31,65 @@ func Run() error {
 	return tui.Start(cfg)
 }
 
-func install() error {
-	dest := installPath()
+func autoInstall() {
+	home, _ := os.UserHomeDir()
+	localBin := filepath.Join(home, ".local", "bin")
+	dest := filepath.Join(localBin, "autoscan")
 
 	// Get current executable path
 	exe, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("getting executable path: %w", err)
+		return
 	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return fmt.Errorf("resolving symlinks: %w", err)
-	}
+	exe, _ = filepath.EvalSymlinks(exe)
 
-	// Check if already installed
+	// Skip if already running from ~/.local/bin
 	if exe == dest {
-		fmt.Println("autoscan is already installed.")
-		return nil
+		// Check if PATH needs update
+		if !inPath(localBin) {
+			fmt.Println("Add to ~/.zshrc to run 'autoscan' from anywhere:")
+			fmt.Println("  export PATH=\"$HOME/.local/bin:$PATH\"")
+			fmt.Println()
+		}
+		return
 	}
 
-	// Ensure ~/.local/bin exists
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("creating directory: %w", err)
+	// Create ~/.local/bin if needed
+	if err := os.MkdirAll(localBin, 0755); err != nil {
+		return
 	}
 
-	// Copy binary
+	// Copy binary to ~/.local/bin
 	src, err := os.Open(exe)
 	if err != nil {
-		return fmt.Errorf("opening source: %w", err)
+		return
 	}
 	defer src.Close()
 
 	dst, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
-		return fmt.Errorf("creating destination: %w", err)
+		return
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return fmt.Errorf("copying binary: %w", err)
+		return
 	}
 
-	fmt.Printf("✓ Installed to %s\n", dest)
-	fmt.Println()
-
-	// Check if ~/.local/bin is in PATH
-	pathEnv := os.Getenv("PATH")
-	home, _ := os.UserHomeDir()
-	localBin := filepath.Join(home, ".local", "bin")
-	if !pathContains(pathEnv, localBin) {
-		fmt.Println("Add to your ~/.zshrc:")
-		fmt.Printf("  export PATH=\"$HOME/.local/bin:$PATH\"\n")
+	fmt.Printf("Installed to %s\n", dest)
+	if !inPath(localBin) {
 		fmt.Println()
-		fmt.Println("Then run: source ~/.zshrc")
-	} else {
-		fmt.Println("You can now run 'autoscan' from anywhere.")
+		fmt.Println("Add to ~/.zshrc to run 'autoscan' from anywhere:")
+		fmt.Println("  export PATH=\"$HOME/.local/bin:$PATH\"")
 	}
-	return nil
+	fmt.Println()
 }
 
-func pathContains(pathEnv, dir string) bool {
-	for _, p := range filepath.SplitList(pathEnv) {
+func inPath(dir string) bool {
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
 		if p == dir {
 			return true
 		}
 	}
 	return false
-}
-
-func uninstall() error {
-	dest := installPath()
-	if err := os.Remove(dest); err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("autoscan is not installed.")
-			return nil
-		}
-		return err
-	}
-	fmt.Printf("✓ Removed %s\n", dest)
-	return nil
 }

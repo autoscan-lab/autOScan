@@ -59,10 +59,14 @@ func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 				relPath = d.Name()
 			}
 
+			// Check for missing required files
+			missingFiles := e.checkMissingFiles(cFiles)
+
 			submissions = append(submissions, domain.NewSubmission(
 				relPath,
 				path,
 				cFiles,
+				missingFiles,
 			))
 		}
 
@@ -74,6 +78,27 @@ func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 	}
 
 	return submissions, nil
+}
+
+// checkMissingFiles returns a list of required files that are missing from cFiles.
+func (e *DiscoveryEngine) checkMissingFiles(cFiles []string) []string {
+	if len(e.policy.RequiredFiles) == 0 {
+		return nil
+	}
+
+	// Build a set of files present (case-insensitive)
+	present := make(map[string]bool)
+	for _, f := range cFiles {
+		present[strings.ToLower(f)] = true
+	}
+
+	var missing []string
+	for _, req := range e.policy.RequiredFiles {
+		if !present[strings.ToLower(req)] {
+			missing = append(missing, req)
+		}
+	}
+	return missing
 }
 
 // checkLeafFolder determines if a directory is a leaf folder (no subdirectories)

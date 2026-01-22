@@ -1,14 +1,13 @@
 <h1 align="center">autOScan</h1>
 
 <p align="center">
-  <strong>Automated C lab submission grader for instructors</strong>
+  <strong>TUI tool for grading C lab submissions</strong>
 </p>
 
 <p align="center">
   <a href="#"><img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat&logo=go&logoColor=white" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TUI-Bubble%20Tea-000000?style=flat" /></a>
   <a href="#"><img src="https://img.shields.io/badge/compiler-gcc-A42E2B?style=flat" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat" /></a>
   <a href="#"><img src="https://img.shields.io/badge/license-MIT-24292e?style=flat" /></a>
 </p>
 
@@ -16,42 +15,24 @@
 
 ## Installation
 
-```bash
-# Download the binary, then:
-./autoscan install
-```
-
-Installs to `~/.local/bin/autoscan`. If `~/.local/bin` isn't in your PATH:
+Download the binary from [Releases](https://github.com/Feli05/autOScan/releases), then:
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+chmod +x autoscan-darwin-arm64
+./autoscan-darwin-arm64
 ```
 
-To uninstall:
-```bash
-autoscan uninstall
-```
+On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add to PATH if needed.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/felipetrejos/autoscan.git
-cd autoscan
+git clone https://github.com/Feli05/autOScan.git
+cd autOScan
 make install
 ```
 
 **Requires:** Go 1.22+, gcc
-
----
-
-## Platform Support
-
-| Platform | Status |
-|----------|--------|
-| macOS    | ✅ Supported |
-| Linux    | ✅ Supported |
-| Windows  | ❌ Not yet   |
 
 ---
 

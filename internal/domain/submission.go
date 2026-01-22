@@ -11,13 +11,22 @@ type Submission struct {
 
 	// CFiles is the list of .c files found in this submission
 	CFiles []string
+
+	// MissingFiles is the list of required files that are missing
+	MissingFiles []string
 }
 
 // NewSubmission creates a new Submission.
-func NewSubmission(id, path string, cFiles []string) Submission {
+func NewSubmission(id, path string, cFiles, missingFiles []string) Submission {
 	return Submission{
-		ID:     id,
-		Path:   path,
-		CFiles: cFiles,
+		ID:           id,
+		Path:         path,
+		CFiles:       cFiles,
+		MissingFiles: missingFiles,
 	}
+}
+
+// HasMissingFiles returns true if required files are missing.
+func (s Submission) HasMissingFiles() bool {
+	return len(s.MissingFiles) > 0
 }

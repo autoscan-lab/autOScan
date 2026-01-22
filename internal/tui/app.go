@@ -1046,11 +1046,15 @@ func (m Model) renderSubmissions() string {
 	for i := m.scrollOffset; i < endIdx; i++ {
 		r := filtered[i]
 
-		// Status icon
+		// Status icon (missing files adds a warning marker)
 		statusIcon := "..."
 		switch r.Status {
 		case domain.StatusClean:
-			statusIcon = styles.SuccessStyle.Render("[OK]")
+			if r.Submission.HasMissingFiles() {
+				statusIcon = styles.WarningStyle.Render("[~]")
+			} else {
+				statusIcon = styles.SuccessStyle.Render("[OK]")
+			}
 		case domain.StatusBanned:
 			statusIcon = styles.WarningStyle.Render("[!]")
 		case domain.StatusFailed, domain.StatusTimedOut:
@@ -1071,21 +1075,29 @@ func (m Model) renderSubmissions() string {
 			id = "..." + id[len(id)-40:]
 		}
 
-		// Build banned string with function names
-		bannedStr := fmt.Sprintf("%d", r.Scan.TotalHits())
+		// Build info string: banned functions or missing files warning
+		infoStr := fmt.Sprintf("%d", r.Scan.TotalHits())
 		if r.Scan.TotalHits() > 0 {
 			var funcs []string
 			for fn := range r.Scan.HitsByFunction {
 				funcs = append(funcs, fn)
 			}
-			bannedStr = styles.WarningStyle.Render(fmt.Sprintf("%d (%s)", r.Scan.TotalHits(), strings.Join(funcs, ", ")))
+			infoStr = styles.WarningStyle.Render(fmt.Sprintf("%d (%s)", r.Scan.TotalHits(), strings.Join(funcs, ", ")))
+		}
+		if r.Submission.HasMissingFiles() {
+			missing := styles.WarningStyle.Render("Missing: " + strings.Join(r.Submission.MissingFiles, ", "))
+			if r.Scan.TotalHits() > 0 {
+				infoStr = infoStr + " " + missing
+			} else {
+				infoStr = missing
+			}
 		}
 
 		line := fmt.Sprintf("  %-4s %-45s %-10s %-30s %dms",
 			statusIcon,
 			id,
 			compileStr,
-			bannedStr,
+			infoStr,
 			r.Compile.DurationMs)
 
 		if i == m.cursor {
