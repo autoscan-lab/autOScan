@@ -21,7 +21,12 @@ clean:
 
 release: clean
 	@mkdir -p $(DIST)
-	go build -o $(DIST)/$(BINARY)-$$(go env GOOS)-$$(go env GOARCH) ./cmd/autoscan
-	@echo "Binary in $(DIST)/"
+	@echo "Building macOS arm64..."
+	go build -o $(DIST)/$(BINARY)-darwin-arm64 ./cmd/autoscan
+	@echo "Building Linux amd64 via Docker..."
+	docker run --rm -v "$(PWD)":/app -w /app --platform linux/amd64 golang:1.22 \
+		sh -c "go build -o $(DIST)/$(BINARY)-linux-amd64 ./cmd/autoscan"
+	@echo ""
+	@ls -lh $(DIST)/
 
 .PHONY: build install uninstall clean release

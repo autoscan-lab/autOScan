@@ -24,10 +24,11 @@ const (
 
 // CompileEngine handles parallel compilation of submissions.
 type CompileEngine struct {
-	policy   *policy.Policy
-	timeout  time.Duration
-	workers  int
-	tempDir  string
+	policy    *policy.Policy
+	timeout   time.Duration
+	workers   int
+	tempDir   string
+	outputDir string // If set, binaries are saved here instead of tempDir
 }
 
 // CompileOption configures the compile engine.
@@ -44,6 +45,14 @@ func WithTimeout(d time.Duration) CompileOption {
 func WithWorkers(n int) CompileOption {
 	return func(e *CompileEngine) {
 		e.workers = n
+	}
+}
+
+// WithOutputDir sets a persistent output directory for binaries.
+// When set, binaries are saved to this directory and not cleaned up.
+func WithOutputDir(dir string) CompileOption {
+	return func(e *CompileEngine) {
+		e.outputDir = dir
 	}
 }
 
@@ -134,12 +143,17 @@ func (e *CompileEngine) Compile(ctx context.Context, sub domain.Submission) doma
 func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) domain.CompileResult {
 	start := time.Now()
 
-	// Build output path in temp directory
+	// Build output path - use outputDir if set (for KeepBinaries), otherwise tempDir
 	outputName := e.policy.Compile.Output
 	if outputName == "" {
 		outputName = "a.out"
 	}
-	outputPath := filepath.Join(e.tempDir, sub.ID, outputName)
+
+	baseDir := e.tempDir
+	if e.outputDir != "" {
+		baseDir = e.outputDir
+	}
+	outputPath := filepath.Join(baseDir, sub.ID, outputName)
 
 	// Create output directory
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {

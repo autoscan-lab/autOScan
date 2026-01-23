@@ -1,0 +1,20 @@
+# Global Banned Functions
+# Add function names to this list to flag them in all scans.
+
+banned:
+  - system
+  - popen
+  - gets
+  - alloca
+  - fopen
+  - fclose
+  - fread
+  - fwrite
+  - fprintf
+  - fscanf
+  - fgets
+  - printf
+  - scanf
+  - puts
+  - getchar
+  - putchar

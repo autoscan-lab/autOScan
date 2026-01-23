@@ -13,6 +13,17 @@
 
 ---
 
+## Features
+
+- Batch compile and grade C submissions
+- Detect banned function calls (e.g., `printf`, `fprintf`)
+- Create and manage grading policies
+- Filter results by status (pass/fail/banned)
+- Export results to JSON or CSV
+- Interactive folder browser for selecting submission directories
+
+---
+
 ## Installation
 
 Download the binary from [Releases](https://github.com/Feli05/autOScan/releases), then:
@@ -42,7 +53,27 @@ make install
 autoscan
 ```
 
-Use arrow keys to navigate, Enter to select. Export to Markdown, JSON, or CSV.
+### Navigation
+
+- **↑/↓** - Navigate lists
+- **Enter** - Select/confirm
+- **Esc** - Go back
+- **Tab** - Switch tabs (in detail view)
+
+### Main Menu
+
+1. **Run Grader** - Select a policy and grade submissions
+2. **Manage Policies** - Create, edit, or delete grading policies
+3. **Settings** - Configure display options
+4. **Uninstall** - Remove autoscan and configs
+
+### Grading Results
+
+- **[OK]** - Compiled successfully, no banned calls
+- **[!]** - Has banned function calls
+- **[X]** - Compilation failed
+- **CHECK** - Requires manual testing
+- **2** - Automatic fail grade (compile error or banned calls)
 
 ---
 
@@ -54,20 +85,47 @@ On first run, configs are created at `~/.config/autoscan/`:
 ~/.config/autoscan/
 ├── policies/        # Policy YAML files
 │   └── example.yaml
-└── banned.txt       # Global banned functions
+├── banned.yaml      # Global banned functions
+└── settings.yaml    # User preferences
 ```
 
-**Policy example:**
+### Policy Example
 
 ```yaml
-name: "Lab 03"
+name: "Lab 03 - Processes"
 compile:
+  gcc: "gcc"
   flags: ["-Wall", "-Wextra", "-lpthread"]
   output: "lab03"
 required_files: [S0.c, S1.c]
 ```
 
-**Banned Functions:** Edit `~/.config/autoscan/banned.txt` (one function per line, `#` for comments).
+### Banned Functions
+
+Edit via the TUI (Manage Policies → Edit Banned Functions) or directly in `~/.config/autoscan/banned.yaml`:
+
+```yaml
+banned:
+  - printf
+  - fprintf
+  - puts
+```
+
+### Settings
+
+- **Short Names** - Truncate folder names at first underscore
+- **Keep Binaries** - Preserve compiled binaries after grading
+
+---
+
+## Export
+
+Export grading results to:
+
+- **JSON** - Structured data for further processing
+- **CSV** - Spreadsheet compatible format
+
+Files are saved to the current working directory.
 
 ---
 

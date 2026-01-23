@@ -170,7 +170,7 @@ func (p *Policy) BuildGCCArgs(sourceFiles []string, outputPath string) []string 
 	return args
 }
 
-// LoadGlobalBanned loads banned functions from a global config file.
+// LoadGlobalBanned loads banned functions from a YAML config file.
 func LoadGlobalBanned(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -180,14 +180,12 @@ func LoadGlobalBanned(path string) ([]string, error) {
 		return nil, err
 	}
 
-	var functions []string
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		functions = append(functions, line)
+	var config struct {
+		Banned []string `yaml:"banned"`
 	}
-	return functions, nil
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("parsing banned.yaml: %w", err)
+	}
+
+	return config.Banned, nil
 }

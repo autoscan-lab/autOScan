@@ -1,0 +1,10 @@
+# autOScan Settings
+# General application settings
+
+# short_names: Truncate student folder names at the first underscore
+# Example: "John Doe_classid_submission" becomes "John Doe"
+short_names: true
+
+# keep_binaries: If true, compiled student binaries are kept in the working directory after grading.
+# If false (default), binaries are deleted after grading.
+keep_binaries: false

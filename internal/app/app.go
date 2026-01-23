@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/felipetrejos/autoscan/internal/tui"
 )
@@ -31,12 +32,19 @@ func Run() error {
 	return tui.Start(cfg)
 }
 
+func shellRC() string {
+	if runtime.GOOS == "darwin" {
+		return "~/.zshrc"
+	}
+	// Linux
+	return "~/.bashrc"
+}
+
 func autoInstall() {
 	home, _ := os.UserHomeDir()
 	localBin := filepath.Join(home, ".local", "bin")
 	dest := filepath.Join(localBin, "autoscan")
 
-	// Get current executable path
 	exe, err := os.Executable()
 	if err != nil {
 		return
@@ -45,9 +53,8 @@ func autoInstall() {
 
 	// Skip if already running from ~/.local/bin
 	if exe == dest {
-		// Check if PATH needs update
 		if !inPath(localBin) {
-			fmt.Println("Add to ~/.zshrc to run 'autoscan' from anywhere:")
+			fmt.Printf("Add to %s to run 'autoscan' from anywhere:\n", shellRC())
 			fmt.Println("  export PATH=\"$HOME/.local/bin:$PATH\"")
 			fmt.Println()
 		}
@@ -79,7 +86,7 @@ func autoInstall() {
 	fmt.Printf("Installed to %s\n", dest)
 	if !inPath(localBin) {
 		fmt.Println()
-		fmt.Println("Add to ~/.zshrc to run 'autoscan' from anywhere:")
+		fmt.Printf("Add to %s to run 'autoscan' from anywhere:\n", shellRC())
 		fmt.Println("  export PATH=\"$HOME/.local/bin:$PATH\"")
 	}
 	fmt.Println()
