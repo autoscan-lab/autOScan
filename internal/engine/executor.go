@@ -14,6 +14,14 @@ import (
 	"github.com/felipetrejos/autoscan/internal/policy"
 )
 
+// unescapeInput converts escape sequences in input strings to actual characters
+func unescapeInput(s string) string {
+	s = strings.ReplaceAll(s, "\\n", "\n")
+	s = strings.ReplaceAll(s, "\\t", "\t")
+	s = strings.ReplaceAll(s, "\\r", "\r")
+	return s
+}
+
 type Executor struct {
 	policy       *policy.Policy
 	timeout      time.Duration
@@ -76,6 +84,8 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 	cmd := exec.CommandContext(timeoutCtx, binaryPath, resolvedArgs...)
 	cmd.Dir = binaryDir
 	if input != "" {
+		// Convert escape sequences to actual characters
+		input = unescapeInput(input)
 		cmd.Stdin = strings.NewReader(input)
 	}
 
@@ -176,9 +186,6 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 	}
 	start := time.Now()
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
-
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -222,8 +229,8 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 			if proc.StartDelayMs > 0 {
 				select {
 				case <-time.After(time.Duration(proc.StartDelayMs) * time.Millisecond):
-				case <-timeoutCtx.Done():
-					procResult.TimedOut = true
+				case <-ctx.Done():
+					procResult.Killed = true
 					procResult.Running = false
 					return
 				}
@@ -234,23 +241,93 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 			binaryDir := e.GetSubmissionBinaryDir(sub)
 			binaryPath := filepath.Join(binaryDir, strings.TrimSuffix(proc.SourceFile, ".c"))
 
-			cmd := exec.CommandContext(timeoutCtx, binaryPath, args...)
+			cmd := exec.CommandContext(ctx, binaryPath, args...)
 			cmd.Dir = binaryDir
 			if input != "" {
-				cmd.Stdin = strings.NewReader(input)
+				cmd.Stdin = strings.NewReader(unescapeInput(input))
 			}
 
-			var stdout, stderr bytes.Buffer
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
+			// Setup streaming pipes
+			stdoutPipe, _ := cmd.StdoutPipe()
+			stderrPipe, _ := cmd.StderrPipe()
 
-			err := cmd.Run()
+			if err := cmd.Start(); err != nil {
+				procResult.Running = false
+				procResult.ExitCode = -1
+				procResult.Stderr = err.Error()
+				return
+			}
+
+			// Send initial update that process has started
+			if onUpdate != nil {
+				mu.Lock()
+				result.TotalDuration = time.Since(start)
+				computeMultiProcessStatus(result)
+				onUpdate(result)
+				mu.Unlock()
+			}
+
+			// Stream stdout
+			var stdoutDone, stderrDone sync.WaitGroup
+			stdoutDone.Add(1)
+			stderrDone.Add(1)
+
+			go func() {
+				defer stdoutDone.Done()
+				buf := make([]byte, 1024)
+				for {
+					n, err := stdoutPipe.Read(buf)
+					if n > 0 {
+						mu.Lock()
+						procResult.Stdout += string(buf[:n])
+						result.TotalDuration = time.Since(start)
+						computeMultiProcessStatus(result)
+						mu.Unlock()
+						if onUpdate != nil {
+							mu.Lock()
+							onUpdate(result)
+							mu.Unlock()
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			}()
+
+			go func() {
+				defer stderrDone.Done()
+				buf := make([]byte, 1024)
+				for {
+					n, err := stderrPipe.Read(buf)
+					if n > 0 {
+						mu.Lock()
+						procResult.Stderr += string(buf[:n])
+						result.TotalDuration = time.Since(start)
+						computeMultiProcessStatus(result)
+						mu.Unlock()
+						if onUpdate != nil {
+							mu.Lock()
+							onUpdate(result)
+							mu.Unlock()
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			}()
+
+			stdoutDone.Wait()
+			stderrDone.Wait()
+
+			err := cmd.Wait()
 			procResult.FinishedAt = time.Now()
 			procResult.Duration = procResult.FinishedAt.Sub(procResult.StartedAt)
 			procResult.Running = false
 
-			if timeoutCtx.Err() == context.DeadlineExceeded {
-				procResult.TimedOut = true
+			if ctx.Err() == context.Canceled {
+				procResult.Killed = true
 			}
 
 			if err != nil {
@@ -261,17 +338,16 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				}
 			}
 
-			procResult.Stdout = stdout.String()
-			procResult.Stderr = stderr.String()
-
 			if procResult.ExpectedExit != nil {
-				procResult.Passed = !procResult.TimedOut && procResult.ExitCode == *procResult.ExpectedExit
+				procResult.Passed = !procResult.Killed && procResult.ExitCode == *procResult.ExpectedExit
 			} else {
-				procResult.Passed = !procResult.TimedOut
+				procResult.Passed = !procResult.Killed
 			}
 
 			if onUpdate != nil {
 				mu.Lock()
+				result.TotalDuration = time.Since(start)
+				computeMultiProcessStatus(result)
 				onUpdate(result)
 				mu.Unlock()
 			}
@@ -281,16 +357,25 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 	wg.Wait()
 
 	result.TotalDuration = time.Since(start)
-	result.AllCompleted = true
-	result.AllPassed = true
-	for _, pr := range result.Processes {
-		if pr.TimedOut {
-			result.AllCompleted = false
-		}
-		if !pr.Passed {
-			result.AllPassed = false
-		}
-	}
+	computeMultiProcessStatus(result)
 
 	return result
+}
+
+// computeMultiProcessStatus updates AllCompleted and AllPassed based on current process states
+func computeMultiProcessStatus(result *domain.MultiProcessResult) {
+	allDone := true
+	allPassed := true
+	for _, pr := range result.Processes {
+		if pr.Running {
+			allDone = false
+		}
+		if pr.Killed {
+			allPassed = false
+		} else if !pr.Passed {
+			allPassed = false
+		}
+	}
+	result.AllCompleted = allDone
+	result.AllPassed = allPassed
 }

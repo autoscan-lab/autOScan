@@ -143,6 +143,9 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		return domain.NewCompileResult(false, nil, -1, "", err.Error(), time.Since(start).Milliseconds(), false)
 	}
 
+	// Copy source files to binary directory (for ftok and similar use cases)
+	e.copySourceFiles(sub, outputDir)
+
 	if e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled && len(e.policy.Run.MultiProcess.Executables) > 0 {
 		return e.compileMultiProcess(ctx, sub, outputDir, start)
 	}
@@ -252,6 +255,16 @@ func (e *CompileEngine) resolveLibraryFiles() ([]string, string, []string) {
 	}
 
 	return libraryFiles, libDir, warnings
+}
+
+func (e *CompileEngine) copySourceFiles(sub domain.Submission, outputDir string) {
+	for _, cFile := range sub.CFiles {
+		src := filepath.Join(sub.Path, cFile)
+		dst := filepath.Join(outputDir, cFile)
+		if data, err := os.ReadFile(src); err == nil {
+			os.WriteFile(dst, data, 0644)
+		}
+	}
 }
 
 func (e *CompileEngine) compileMultiProcess(ctx context.Context, sub domain.Submission, outputDir string, start time.Time) domain.CompileResult {

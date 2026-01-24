@@ -1,4 +1,3 @@
-// Package tui provides the terminal user interface for autOScan.
 package tui
 
 import (
@@ -16,11 +15,6 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// View Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-// View represents different screens in the app
 type View int
 
 const (
@@ -36,17 +30,11 @@ const (
 	ViewExport
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
 const (
-	// Minimum terminal dimensions
 	minWidth  = 60
 	minHeight = 20
 )
 
-// Filter represents the current filter mode
 type Filter int
 
 const (
@@ -69,7 +57,6 @@ func (f Filter) String() string {
 	}
 }
 
-// MenuItem for home screen
 type MenuItem int
 
 const (
@@ -80,10 +67,6 @@ const (
 	MenuQuit
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Messages
-// ─────────────────────────────────────────────────────────────────────────────
-
 type (
 	policiesLoadedMsg    []*policy.Policy
 	discoveryCompleteMsg []domain.Submission
@@ -91,74 +74,47 @@ type (
 		sub    domain.Submission
 		result domain.CompileResult
 	}
-	runCompleteMsg domain.RunReport
-	errorMsg       error
-	exportDoneMsg  struct {
-		format string
-		path   string
-	}
-	uninstallDoneMsg    struct{}
-	bannedListLoadedMsg []string
-	bannedListSavedMsg  struct{}
-
-	// Execution messages
-	executeResultMsg struct {
-		result domain.ExecuteResult
-	}
-	executeTestResultsMsg struct {
-		results []domain.ExecuteResult
-	}
-	multiProcessResultMsg struct {
-		result *domain.MultiProcessResult
-	}
+	runCompleteMsg         domain.RunReport
+	errorMsg               error
+	exportDoneMsg          struct{ format, path string }
+	uninstallDoneMsg       struct{}
+	bannedListLoadedMsg    []string
+	bannedListSavedMsg     struct{}
+	executeResultMsg       struct{ result domain.ExecuteResult }
+	executeTestResultsMsg  struct{ results []domain.ExecuteResult }
+	multiProcessResultMsg  struct{ result *domain.MultiProcessResult }
+	multiProcessUpdateMsg  struct{ result *domain.MultiProcessResult }
+	multiProcessTickMsg    struct{}
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Model
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Model is the main Bubble Tea model
 type Model struct {
-	// View state
 	currentView View
 	width       int
 	height      int
 
-	// Settings
 	settings       config.Settings
 	settingsCursor int
+	menuItem       MenuItem
 
-	// Home menu
-	menuItem MenuItem
-
-	// Animation
 	eyeAnimation components.EyeAnimation
 	helpPanel    components.HelpPanel
 
-	// Policy selection
-	policies       []*policy.Policy
-	selectedPolicy int
-
-	// Policy management
+	policies           []*policy.Policy
+	selectedPolicy     int
 	policyManageCursor int
 	policyEditor       PolicyEditor
 	confirmDelete      bool
 
-	// Banned list editor
 	bannedList       []string
 	bannedCursorEdit int
 	bannedInput      textinput.Model
 	bannedEditing    bool
 
-	// Directory browser
 	folderBrowser FolderBrowser
 	root          string
 	inputError    string
 
-	// Runner
-	runner *engine.Runner
-
-	// Current run state
+	runner      *engine.Runner
 	submissions []domain.Submission
 	results     []domain.SubmissionResult
 	report      *domain.RunReport
@@ -167,7 +123,6 @@ type Model struct {
 	spinner     spinner.Model
 	runError    string
 
-	// List navigation
 	cursor       int
 	scrollOffset int
 	visibleRows  int
@@ -175,39 +130,35 @@ type Model struct {
 	searchQuery  string
 	searchActive bool
 
-	// Details view
 	detailsTab    int
 	detailScroll  int
 	bannedCursor  int
 	expandedFuncs map[string]bool
 
-	// Run tab state
-	runArgsInput       textinput.Model
-	runStdinInput      textinput.Model
-	runInputFocused    int // 0 = args, 1 = stdin, 2 = run button, 3 = test cases, 4+ = multi-process
-	runResult          *domain.ExecuteResult
-	runTestResults     []domain.ExecuteResult
-	runTestCursor      int
-	isExecuting        bool
-	executor           *engine.Executor
-	multiProcessResult *domain.MultiProcessResult
-	showMultiProcess   bool
-	runCancelFunc      context.CancelFunc // To cancel/kill running processes
+	runArgsInput           textinput.Model
+	runStdinInput          textinput.Model
+	runInputFocused        int
+	runResult              *domain.ExecuteResult
+	runTestResults         []domain.ExecuteResult
+	runTestCursor          int
+	isExecuting            bool
+	executor               *engine.Executor
+	multiProcessResult     *domain.MultiProcessResult
+	showMultiProcess       bool
+	runCancelFunc          context.CancelFunc
+	multiProcessUpdateChan <-chan *domain.MultiProcessResult
+	outputScroll           int
+	selectedProcessIdx     int
 
-	// Export
 	exportCursor int
-
-	// Status message
-	statusMsg string
+	statusMsg    string
 }
 
-// Config holds TUI startup configuration
 type Config struct {
 	PolicyPath string
 	Root       string
 }
 
-// New creates a new TUI model
 func New(cfg Config) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -218,12 +169,10 @@ func New(cfg Config) Model {
 		root = "."
 	}
 
-	// Initialize text input for banned editor
 	bannedInput := textinput.New()
 	bannedInput.Placeholder = "function_name"
 	bannedInput.CharLimit = 64
 
-	// Initialize text inputs for run tab
 	runArgsInput := textinput.New()
 	runArgsInput.Placeholder = "arg1 arg2 arg3..."
 	runArgsInput.CharLimit = 256
@@ -234,10 +183,7 @@ func New(cfg Config) Model {
 	runStdinInput.CharLimit = 1024
 	runStdinInput.Width = 40
 
-	// Load settings
 	settings, _ := config.LoadSettings()
-
-	// Initialize help panel
 	helpPanel := components.NewHelpPanel(28, styles.Version)
 
 	return Model{
@@ -260,16 +206,10 @@ func New(cfg Config) Model {
 	}
 }
 
-// Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.loadPolicies(),
-		m.spinner.Tick,
-		m.eyeAnimation.Init(),
-	)
+	return tea.Batch(m.loadPolicies(), m.spinner.Tick, m.eyeAnimation.Init())
 }
 
-// Start initializes and runs the TUI
 func Start(cfg Config) error {
 	p := tea.NewProgram(New(cfg), tea.WithAltScreen())
 	_, err := p.Run()

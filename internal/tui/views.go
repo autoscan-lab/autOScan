@@ -25,9 +25,7 @@ const logo = `
 
 const tagline = "OS Lab Submission Grader"
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Main View Router
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) View() string {
 	var content string
@@ -75,9 +73,7 @@ func (m Model) View() string {
 	)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Home View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderHome() string {
 	var b strings.Builder
@@ -190,9 +186,7 @@ func (m Model) renderHome() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Policy Select View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderPolicySelect() string {
 	var b strings.Builder
@@ -304,9 +298,7 @@ func (m Model) renderPolicySelect() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Policy Manage View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderPolicyManage() string {
 	var b strings.Builder
@@ -419,9 +411,7 @@ func (m Model) renderPolicyManage() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Settings View (Updated with KeepBinaries)
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderSettings() string {
 	var b strings.Builder
@@ -469,9 +459,7 @@ func (m Model) renderSettings() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Directory Input View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderDirectoryInput() string {
 	var b strings.Builder
@@ -509,9 +497,7 @@ func (m Model) renderDirectoryInput() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Submissions View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderSubmissions() string {
 	var b strings.Builder
@@ -834,8 +820,7 @@ func (m Model) renderDetails() string {
 		helpItems := []components.HelpItem{
 			{Key: "tab", Desc: "switch tabs"},
 			{Key: "↑/↓", Desc: "navigate"},
-			{Key: "enter", Desc: "run"},
-			{Key: "t", Desc: "run tests"},
+			{Key: "enter", Desc: "run/focus"},
 		}
 		// Add multi-process help if configured
 		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
@@ -1098,15 +1083,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		return b.String()
 	}
 
-	// Show executing spinner with kill option
-	if m.isExecuting {
-		b.WriteString(m.spinner.View())
-		b.WriteString(" Running...")
-		b.WriteString("\n\n")
-		b.WriteString(styles.WarningText.Render("Press Ctrl+K to force kill (SIGKILL)"))
-		return b.String()
-	}
-
 	// Check if multi-process mode is enabled
 	isMultiProcess := false
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
@@ -1114,6 +1090,15 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
 			isMultiProcess = true
 		}
+	}
+
+	// Show executing spinner for single-process only (multi-process shows streaming grid)
+	if m.isExecuting && !isMultiProcess {
+		b.WriteString(m.spinner.View())
+		b.WriteString(" Running...")
+		b.WriteString("\n\n")
+		b.WriteString(styles.WarningText.Render("Press Ctrl+K to cancel"))
+		return b.String()
 	}
 
 	if isMultiProcess {
@@ -1305,18 +1290,44 @@ func (m Model) renderMultiProcessGrid() string {
 	b.WriteString(styles.SubtleText.Render(fmt.Sprintf("Total: %dms", m.multiProcessResult.TotalDuration.Milliseconds())))
 
 	// Status indicator
-	if m.multiProcessResult.AllPassed {
+	anyRunning := false
+	anyKilled := false
+	for _, pr := range m.multiProcessResult.Processes {
+		if pr.Running {
+			anyRunning = true
+		}
+		if pr.Killed {
+			anyKilled = true
+		}
+	}
+
+	if anyRunning {
+		b.WriteString(styles.PrimaryText.Render(" [RUNNING...]"))
+		b.WriteString(styles.SubtleText.Render(" (Ctrl+K to kill)"))
+	} else if m.multiProcessResult.AllPassed {
 		b.WriteString(styles.SuccessText.Render(" [ALL PASSED]"))
+	} else if anyKilled {
+		b.WriteString(styles.WarningText.Render(" [KILLED]"))
 	} else if m.multiProcessResult.AllCompleted {
 		b.WriteString(styles.WarningText.Render(" [Some failed]"))
 	} else {
-		b.WriteString(styles.ErrorText.Render(" [Timeout]"))
+		b.WriteString(styles.ErrorText.Render(" [Incomplete]"))
 	}
 	b.WriteString("\n\n")
 
 	// Create grid layout - responsive (2 columns or 1 column)
 	processes := m.multiProcessResult.Order
 	numProcs := len(processes)
+
+	// Calculate scenario count for selection indexing
+	scenarioCount := 0
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		mp := m.policies[m.selectedPolicy].Run.MultiProcess
+		if mp != nil {
+			scenarioCount = len(mp.TestScenarios)
+		}
+	}
+	processStartIdx := 1 + scenarioCount
 
 	// Calculate available width - the content box has:
 	// - Width(m.width - 8) which is TOTAL width including border and padding
@@ -1338,7 +1349,7 @@ func (m Model) renderMultiProcessGrid() string {
 		colWidth := (availableWidth - 4) / 2 // Subtract gap (4 chars for safety)
 
 		for i := 0; i < numProcs; i += 2 {
-			row := m.renderProcessRow(processes, i, colWidth, true)
+			row := m.renderProcessRow(processes, i, colWidth, true, scenarioCount)
 			b.WriteString(row)
 			if i+2 < numProcs {
 				b.WriteString("\n")
@@ -1351,7 +1362,13 @@ func (m Model) renderMultiProcessGrid() string {
 		for i := 0; i < numProcs; i++ {
 			procName := processes[i]
 			proc := m.multiProcessResult.Processes[procName]
-			b.WriteString(m.renderProcessBox(proc, colWidth))
+			isSelected := m.runInputFocused == processStartIdx+i
+			isFocused := m.selectedProcessIdx == i
+			scrollOffset := 0
+			if isFocused {
+				scrollOffset = m.outputScroll
+			}
+			b.WriteString(m.renderProcessBox(proc, colWidth, isSelected, isFocused, scrollOffset))
 			if i < numProcs-1 {
 				b.WriteString("\n")
 			}
@@ -1361,34 +1378,53 @@ func (m Model) renderMultiProcessGrid() string {
 	return b.String()
 }
 
-func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoCol bool) string {
+func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoCol bool, scenarioCount int) string {
 	if !twoCol || startIdx >= len(processes) {
 		return ""
 	}
 
+	processStartIdx := 1 + scenarioCount
+
 	// First box
 	procName := processes[startIdx]
 	proc := m.multiProcessResult.Processes[procName]
-	box1 := m.renderProcessBox(proc, colWidth)
+	isSelected1 := m.runInputFocused == processStartIdx+startIdx
+	isFocused1 := m.selectedProcessIdx == startIdx
+	scroll1 := 0
+	if isFocused1 {
+		scroll1 = m.outputScroll
+	}
+	box1 := m.renderProcessBox(proc, colWidth, isSelected1, isFocused1, scroll1)
 
 	// Second box (if exists)
 	if startIdx+1 >= len(processes) {
-		// Only one process - just return it
 		return box1
 	}
 
 	procName2 := processes[startIdx+1]
 	proc2 := m.multiProcessResult.Processes[procName2]
-	box2 := m.renderProcessBox(proc2, colWidth)
+	isSelected2 := m.runInputFocused == processStartIdx+startIdx+1
+	isFocused2 := m.selectedProcessIdx == startIdx+1
+	scroll2 := 0
+	if isFocused2 {
+		scroll2 = m.outputScroll
+	}
+	box2 := m.renderProcessBox(proc2, colWidth, isSelected2, isFocused2, scroll2)
 
-	// Join horizontally with a gap
 	return lipgloss.JoinHorizontal(lipgloss.Top, box1, "  ", box2)
 }
 
-func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
-	// Border color based on pass/fail
+func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelected bool, isFocused bool, scrollOffset int) string {
 	borderColor := styles.Muted
-	if proc.ExpectedExit != nil {
+	if isFocused {
+		borderColor = styles.Accent
+	} else if isSelected {
+		borderColor = styles.PrimaryGlow
+	} else if proc.Running {
+		borderColor = styles.Primary
+	} else if proc.Killed {
+		borderColor = styles.Warning
+	} else if proc.ExpectedExit != nil {
 		if proc.Passed {
 			borderColor = styles.Success
 		} else {
@@ -1396,7 +1432,6 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 		}
 	}
 
-	// Content width is box width minus border (2) and padding (2)
 	contentWidth := width - 4
 	if contentWidth < 20 {
 		contentWidth = 20
@@ -1404,12 +1439,59 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 
 	var content strings.Builder
 
-	// Header with name and status - truncate if needed
+	// Combine output first to calculate scroll info
+	allOutput := proc.Stdout
+	if proc.Stderr != "" {
+		if allOutput != "" {
+			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + proc.Stderr
+		} else {
+			allOutput = styles.WarningText.Render("stderr:") + "\n" + proc.Stderr
+		}
+	}
+
+	// Wrap lines and calculate scroll parameters
+	var wrappedLines []string
+	if allOutput != "" {
+		rawLines := strings.Split(allOutput, "\n")
+		for _, line := range rawLines {
+			if len(line) <= contentWidth {
+				wrappedLines = append(wrappedLines, line)
+			} else {
+				for len(line) > contentWidth {
+					wrappedLines = append(wrappedLines, line[:contentWidth])
+					line = line[contentWidth:]
+				}
+				if len(line) > 0 {
+					wrappedLines = append(wrappedLines, line)
+				}
+			}
+		}
+	}
+
+	maxShow := 8 // Fixed size for consistent height
+	minContentLines := maxShow
+	totalLines := len(wrappedLines)
+	maxScroll := totalLines - maxShow
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	startIdx := scrollOffset
+	if startIdx > maxScroll {
+		startIdx = maxScroll
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx := startIdx + maxShow
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+
+	// Header with scroll info on same line
 	header := proc.Name
 	sourceInfo := fmt.Sprintf(" (%s)", proc.SourceFile)
-	if len(header)+len(sourceInfo) > contentWidth {
-		// Truncate source file name
-		maxSource := contentWidth - len(header) - 5
+	if len(header)+len(sourceInfo) > contentWidth-10 {
+		maxSource := contentWidth - len(header) - 15
 		if maxSource > 3 {
 			sourceInfo = fmt.Sprintf(" (%s...)", proc.SourceFile[:maxSource])
 		} else {
@@ -1418,43 +1500,49 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 	}
 	content.WriteString(styles.Subtle.Render(header))
 	content.WriteString(styles.SubtleText.Render(sourceInfo))
+	if isFocused && totalLines > maxShow {
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
+	}
 	content.WriteString("\n")
 
-	// Status line with pass/fail indication
-	if proc.TimedOut {
+	// Status line
+	if proc.Running {
+		content.WriteString(styles.Highlight.Render("[RUNNING]"))
+		content.WriteString(styles.SubtleText.Render(" ..."))
+	} else if proc.Killed {
+		content.WriteString(styles.WarningText.Render("[KILLED]"))
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	} else if proc.TimedOut {
 		content.WriteString(styles.ErrorText.Render("[TIMEOUT]"))
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	} else if proc.ExpectedExit != nil {
 		if proc.Passed {
 			content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[PASS] exit %d", proc.ExitCode)))
 		} else {
 			content.WriteString(styles.ErrorText.Render(fmt.Sprintf("[FAIL] exit %d (expected %d)", proc.ExitCode, *proc.ExpectedExit)))
 		}
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	} else if proc.ExitCode == 0 {
 		content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", proc.ExitCode)))
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	} else {
 		content.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", proc.ExitCode)))
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	}
-	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	content.WriteString("\n")
 
-	// Output preview (truncated to fit content width)
-	if proc.Stdout != "" {
-		lines := strings.Split(proc.Stdout, "\n")
-		maxShow := 3
-		for i := 0; i < min(maxShow, len(lines)); i++ {
-			line := lines[i]
-			if len(line) > contentWidth {
-				line = line[:contentWidth-3] + "..."
-			}
-			content.WriteString(styles.SubtleText.Render(line))
-			content.WriteString("\n")
-		}
-		if len(lines) > maxShow {
-			content.WriteString(styles.SubtleText.Render(fmt.Sprintf("(+%d lines)", len(lines)-maxShow)))
-		}
+	// Write output lines
+	for i := startIdx; i < endIdx; i++ {
+		content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
+		content.WriteString("\n")
 	}
 
-	// Create the box with exact width
+	// Pad with empty lines to reach minimum height
+	currentLines := endIdx - startIdx
+	for i := currentLines; i < minContentLines; i++ {
+		content.WriteString("\n")
+	}
+
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
@@ -1465,78 +1553,127 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 }
 
 func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
-	var b strings.Builder
+	// Calculate box width
+	boxWidth := m.width - 14
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+	contentWidth := boxWidth - 4
 
-	// Status line
-	if r.TimedOut {
-		b.WriteString(styles.ErrorText.Render("[TIMEOUT] Execution timed out"))
-	} else if r.ExitCode == 0 {
-		b.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] Exit code: %d", r.ExitCode)))
+	// Determine if focused for scrolling
+	testCaseCount := 0
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
+	}
+	outputBoxIdx := 3 + testCaseCount
+	isSelected := m.runInputFocused == outputBoxIdx
+	isFocused := m.selectedProcessIdx >= 0
+
+	borderColor := styles.Muted
+	if isFocused {
+		borderColor = styles.Accent
+	} else if isSelected {
+		borderColor = styles.PrimaryGlow
+	} else if r.ExitCode == 0 && !r.TimedOut {
+		borderColor = styles.Success
 	} else {
-		b.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", r.ExitCode)))
-	}
-	b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%dms)", r.Duration.Milliseconds())))
-	b.WriteString("\n")
-
-	// Show args if present
-	if len(r.Args) > 0 {
-		b.WriteString(styles.SubtleText.Render(fmt.Sprintf("Args: %s\n", strings.Join(r.Args, " "))))
+		borderColor = styles.Warning
 	}
 
-	// Stdout
-	if r.Stdout != "" {
-		b.WriteString("\n")
-		b.WriteString(styles.SubtleText.Render("stdout:"))
-		b.WriteString("\n")
-		// Show more output lines with wider width
-		lines := strings.Split(r.Stdout, "\n")
-		maxLines := 15
-		maxLineWidth := 90
-		if len(lines) > maxLines {
-			for i := 0; i < maxLines; i++ {
-				line := lines[i]
-				if len(line) > maxLineWidth {
-					line = line[:maxLineWidth-3] + "..."
-				}
-				b.WriteString("  " + line + "\n")
-			}
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf("  ... (%d more lines)\n", len(lines)-maxLines)))
-		} else {
-			for _, line := range lines {
-				if len(line) > maxLineWidth {
-					line = line[:maxLineWidth-3] + "..."
-				}
-				b.WriteString("  " + line + "\n")
-			}
-		}
-	}
+	var content strings.Builder
 
-	// Stderr
+	// Header - status line with scroll info on same line
+	if r.TimedOut {
+		content.WriteString(styles.ErrorText.Render("[TIMEOUT] Execution timed out"))
+	} else if r.ExitCode == 0 {
+		content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", r.ExitCode)))
+	} else {
+		content.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", r.ExitCode)))
+	}
+	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", r.Duration.Milliseconds())))
+
+	// Combine stdout and stderr first to calculate scroll info
+	allOutput := r.Stdout
 	if r.Stderr != "" {
-		b.WriteString("\n")
-		b.WriteString(styles.WarningText.Render("stderr:"))
-		b.WriteString("\n")
-		lines := strings.Split(r.Stderr, "\n")
-		maxLines := 10
-		maxLineWidth := 90
-		for i := 0; i < min(maxLines, len(lines)); i++ {
-			line := lines[i]
-			if len(line) > maxLineWidth {
-				line = line[:maxLineWidth-3] + "..."
-			}
-			b.WriteString("  " + line + "\n")
-		}
-		if len(lines) > maxLines {
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf("  ... (%d more lines)\n", len(lines)-maxLines)))
+		if allOutput != "" {
+			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + r.Stderr
+		} else {
+			allOutput = styles.WarningText.Render("stderr:") + "\n" + r.Stderr
 		}
 	}
 
-	return b.String()
+	// Calculate scroll parameters
+	var wrappedLines []string
+	if allOutput != "" {
+		rawLines := strings.Split(allOutput, "\n")
+		for _, line := range rawLines {
+			if len(line) <= contentWidth {
+				wrappedLines = append(wrappedLines, line)
+			} else {
+				for len(line) > contentWidth {
+					wrappedLines = append(wrappedLines, line[:contentWidth])
+					line = line[contentWidth:]
+				}
+				if len(line) > 0 {
+					wrappedLines = append(wrappedLines, line)
+				}
+			}
+		}
+	}
+
+	maxShow := 15 // Fixed size, no change between focused/unfocused
+	totalLines := len(wrappedLines)
+	maxScroll := totalLines - maxShow
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	startIdx := m.outputScroll
+	if startIdx > maxScroll {
+		startIdx = maxScroll
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx := startIdx + maxShow
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+
+	// Add scroll info to header line (same line, no layout shift)
+	if isFocused && totalLines > maxShow {
+		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
+	}
+	content.WriteString("\n")
+
+	// Write output lines with consistent height
+	if totalLines > 0 {
+		for i := startIdx; i < endIdx; i++ {
+			content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
+			content.WriteString("\n")
+		}
+		// Pad to maintain consistent height
+		linesShown := endIdx - startIdx
+		for i := linesShown; i < maxShow; i++ {
+			content.WriteString("\n")
+		}
+	} else {
+		content.WriteString(styles.SubtleText.Render("(no output)\n"))
+		// Pad empty output area
+		for i := 1; i < maxShow; i++ {
+			content.WriteString("\n")
+		}
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(boxWidth)
+
+	return box.Render(content.String())
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Export View
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderExport() string {
 	var b strings.Builder
@@ -1633,9 +1770,7 @@ func (m Model) doExport() tea.Cmd {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Banned Editor
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) renderBannedEditor() string {
 	var b strings.Builder

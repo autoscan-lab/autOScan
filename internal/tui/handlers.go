@@ -17,11 +17,6 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/components"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Update Handler
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Update handles all messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -131,6 +126,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeResultMsg:
 		m.runResult = &msg.result
 		m.isExecuting = false
+		m.selectedProcessIdx = -1
+		m.outputScroll = 0
+		// Don't change runInputFocused - keep it on whatever was pressed
 		return m, nil
 
 	case executeTestResultsMsg:
@@ -139,9 +137,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case multiProcessResultMsg:
-		m.multiProcessResult = msg.result
+		if msg.result != nil {
+			m.multiProcessResult = msg.result
+		}
 		m.isExecuting = false
 		m.showMultiProcess = true
+		m.multiProcessUpdateChan = nil
+		return m, nil
+
+	case multiProcessUpdateMsg:
+		m.multiProcessResult = msg.result
+		m.showMultiProcess = true
+		if m.multiProcessUpdateChan != nil {
+			return m, waitForMultiProcessUpdates(m.multiProcessUpdateChan)
+		}
 		return m, nil
 	}
 
@@ -158,10 +167,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(cmds...)
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Home View Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -214,9 +219,6 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Policy Select Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -244,9 +246,6 @@ func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Policy Manage Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	maxCursor := len(m.policies)
@@ -303,9 +302,6 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Policy Editor Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Only handle ESC at the top level if policy editor is not in a sub-mode
@@ -319,9 +315,7 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Settings Handler (Updated with KeepBinaries)
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -348,9 +342,6 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Directory Input Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -370,9 +361,6 @@ func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Submissions Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.isRunning {
@@ -437,9 +425,6 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Details Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Helper to get the number of banned functions for current submission
@@ -552,13 +537,106 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if isMultiProcess {
-		// ══════════════════════════════════════════════════════════════════════
-		// MULTI-PROCESS MODE NAVIGATION
-		// Focus: 0=Run with defaults, 1+=Test scenarios
-		// ══════════════════════════════════════════════════════════════════════
 		scenarioCount := len(mp.TestScenarios)
 		maxFocus := scenarioCount // 0=defaults, 1..N=scenarios
 
+		// If a process box is focused for scrolling
+		if m.multiProcessResult != nil && m.selectedProcessIdx >= 0 {
+			numProcs := len(m.multiProcessResult.Order)
+
+			// Calculate max scroll for current process (maxShow = 8 in view)
+			maxScroll := 0
+			if m.selectedProcessIdx < numProcs {
+				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
+				proc := m.multiProcessResult.Processes[procName]
+				outputLen := len(strings.Split(proc.Stdout+proc.Stderr, "\n"))
+				maxScroll = outputLen - 8
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+			}
+
+			switch msg.String() {
+			case "up", "k":
+				if m.outputScroll > 0 {
+					m.outputScroll--
+				}
+				return m, nil
+			case "down", "j":
+				if m.outputScroll < maxScroll {
+					m.outputScroll++
+				}
+				return m, nil
+			case "esc", "enter":
+				m.selectedProcessIdx = -1
+				m.outputScroll = 0
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// If results exist, allow navigating to process boxes
+		if m.multiProcessResult != nil && len(m.multiProcessResult.Order) > 0 {
+			numProcs := len(m.multiProcessResult.Order)
+			// runInputFocused: 0=Run, 1..N=scenarios, N+1..N+numProcs=process boxes
+			processStartIdx := 1 + scenarioCount
+
+			switch msg.String() {
+			case "tab":
+				m.detailsTab = 0
+				m.detailScroll = 0
+				return m, nil
+
+			case "shift+tab":
+				m.detailsTab = 2
+				m.detailScroll = 0
+				return m, nil
+
+			case "down", "j":
+				maxIdx := processStartIdx + numProcs - 1
+				if m.runInputFocused < maxIdx {
+					m.runInputFocused++
+				}
+				return m, nil
+
+			case "up", "k":
+				if m.runInputFocused > 0 {
+					m.runInputFocused--
+				}
+				return m, nil
+
+			case "enter":
+				if m.runInputFocused == 0 {
+					return m, m.executeMultiProcess()
+				} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
+					return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
+				} else if m.runInputFocused >= processStartIdx {
+					// Focus a process box for scrolling
+					m.selectedProcessIdx = m.runInputFocused - processStartIdx
+					m.outputScroll = 0
+					return m, nil
+				}
+
+			case "m":
+				return m, m.executeMultiProcess()
+
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				idx := int(msg.String()[0] - '1')
+				if idx >= 0 && idx < scenarioCount {
+					return m, m.executeMultiProcessScenario(idx)
+				}
+
+			case "esc", "q":
+				m.currentView = ViewSubmissions
+				m.expandedFuncs = nil
+				m.multiProcessResult = nil
+				m.showMultiProcess = false
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// No results yet - simple navigation
 		switch msg.String() {
 		case "tab":
 			m.detailsTab = 0
@@ -584,19 +662,15 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			if m.runInputFocused == 0 {
-				// Run with default args
 				return m, m.executeMultiProcess()
 			} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
-				// Run specific test scenario
 				return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
 			}
 
 		case "m":
-			// Quick run with defaults
 			return m, m.executeMultiProcess()
 
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			// Run specific test scenario by number
 			idx := int(msg.String()[0] - '1')
 			if idx >= 0 && idx < scenarioCount {
 				return m, m.executeMultiProcessScenario(idx)
@@ -623,9 +697,37 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
 	}
 
-	maxFocus := 2
-	if testCaseCount > 0 {
-		maxFocus = 2 + testCaseCount
+	// maxFocus: 0=args, 1=stdin, 2=run, 3..N=test cases, N+1=output box (if result exists)
+	maxFocus := 2 + testCaseCount
+	outputBoxIdx := maxFocus + 1
+
+	// If output box is focused for scrolling
+	if m.runResult != nil && m.selectedProcessIdx >= 0 {
+		// Calculate max scroll based on output lines (maxShow = 15 in view)
+		outputLen := len(strings.Split(m.runResult.Stdout+m.runResult.Stderr, "\n"))
+		maxScroll := outputLen - 15
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+
+		switch msg.String() {
+		case "up", "k":
+			if m.outputScroll > 0 {
+				m.outputScroll--
+			}
+			return m, nil
+		case "down", "j":
+			if m.outputScroll < maxScroll {
+				m.outputScroll++
+			}
+			return m, nil
+		case "esc", "enter":
+			m.selectedProcessIdx = -1
+			m.outputScroll = 0
+			m.runInputFocused = outputBoxIdx
+			return m, nil
+		}
+		return m, nil
 	}
 
 	switch msg.String() {
@@ -644,7 +746,12 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "down", "j":
-		if m.runInputFocused < maxFocus {
+		// Allow navigating to output box if result exists
+		maxIdx := maxFocus
+		if m.runResult != nil {
+			maxIdx = outputBoxIdx
+		}
+		if m.runInputFocused < maxIdx {
 			m.runInputFocused++
 		}
 		m.runArgsInput.Blur()
@@ -670,9 +777,15 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
+		// Focus output box for scrolling
+		if m.runResult != nil && m.runInputFocused == outputBoxIdx {
+			m.selectedProcessIdx = 0
+			m.outputScroll = 0
+			return m, nil
+		}
 		if m.runInputFocused == 2 {
 			return m, m.executeSubmission()
-		} else if m.runInputFocused > 2 {
+		} else if m.runInputFocused > 2 && m.runInputFocused <= maxFocus {
 			testIdx := m.runInputFocused - 3
 			return m, m.executeTestCase(testIdx)
 		}
@@ -680,11 +793,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		if m.runInputFocused >= 2 {
 			return m, m.executeSubmission()
-		}
-
-	case "t":
-		if testCaseCount > 0 {
-			return m, m.executeAllTestCases()
 		}
 
 	case "esc", "q":
@@ -697,7 +805,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle text input (only in single-process mode)
 	var cmd tea.Cmd
 	if m.runInputFocused == 0 {
 		m.runArgsInput, cmd = m.runArgsInput.Update(msg)
@@ -708,9 +815,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Export Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -732,9 +836,6 @@ func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Banned Editor Handler
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.bannedEditing {
@@ -797,9 +898,6 @@ func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Commands
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m *Model) loadPolicies() tea.Cmd {
 	return func() tea.Msg {
@@ -917,9 +1015,6 @@ func (m Model) saveBannedList() tea.Cmd {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) filteredResults() []domain.SubmissionResult {
 	if m.results == nil {
@@ -959,9 +1054,7 @@ func (m Model) filteredResults() []domain.SubmissionResult {
 	return filtered
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Execution Commands
-// ─────────────────────────────────────────────────────────────────────────────
 
 func (m *Model) getExecutor() *engine.Executor {
 	if m.executor != nil {
@@ -1010,19 +1103,17 @@ func (m *Model) executeSubmission() tea.Cmd {
 	argsStr := m.runArgsInput.Value()
 	stdinStr := m.runStdinInput.Value()
 
-	// Parse args (split by spaces, respecting quotes would be nice but simple split for now)
 	var args []string
 	if argsStr != "" {
 		args = strings.Fields(argsStr)
 	}
 
-	// Convert \n to actual newlines
-	stdinStr = strings.ReplaceAll(stdinStr, "\\n", "\n")
-
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	m.runCancelFunc = cancel
 	m.isExecuting = true
+	m.selectedProcessIdx = -1
+	m.outputScroll = 0
 
 	return func() tea.Msg {
 		result := executor.Execute(ctx, sub, args, stdinStr)
@@ -1066,77 +1157,55 @@ func (m Model) executeTestCase(testIdx int) tea.Cmd {
 	}
 }
 
-func (m Model) executeAllTestCases() tea.Cmd {
-	filtered := m.filteredResults()
-	if m.cursor >= len(filtered) {
-		return nil
-	}
-
-	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
-		return nil
-	}
-
-	pol := m.policies[m.selectedPolicy]
-	if len(pol.Run.TestCases) == 0 {
-		return nil
-	}
-
-	executor := m.getExecutor()
-	if executor == nil {
-		return func() tea.Msg {
-			return executeTestResultsMsg{results: []domain.ExecuteResult{{
-				OK:     false,
-				Stderr: "Binaries not available. Enable 'Keep Binaries' in settings and re-run.",
-			}}}
-		}
-	}
-
-	sub := filtered[m.cursor].Submission
-
-	m.isExecuting = true
-
-	return func() tea.Msg {
-		results := executor.ExecuteAllTestCases(context.Background(), sub)
-		return executeTestResultsMsg{results: results}
-	}
-}
-
 func (m *Model) executeMultiProcess() tea.Cmd {
 	filtered := m.filteredResults()
 	if m.cursor >= len(filtered) {
 		return nil
 	}
 
-	// Verify we have a valid policy selected
 	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
 		return nil
 	}
 
-	// Clear previous results before starting new execution
 	m.multiProcessResult = nil
-	m.showMultiProcess = false
+	m.showMultiProcess = true
 
-	// Ensure executor is using current policy (force recreation if needed)
 	m.executor = nil
 	executor := m.getExecutor()
 	if executor == nil || !executor.HasMultiProcess() {
-		return func() tea.Msg {
-			return multiProcessResultMsg{result: nil}
-		}
+		return func() tea.Msg { return multiProcessResultMsg{result: nil} }
 	}
 
-	// Get current submission
 	sub := filtered[m.cursor].Submission
-
-	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	m.runCancelFunc = cancel
 	m.isExecuting = true
+	m.selectedProcessIdx = -1
+	m.outputScroll = 0
 
-	return func() tea.Msg {
-		result := executor.ExecuteMultiProcess(ctx, sub, nil)
-		return multiProcessResultMsg{result: result}
-	}
+	updateChan := make(chan *domain.MultiProcessResult, 100)
+	m.multiProcessUpdateChan = updateChan
+
+	go func() {
+		result := executor.ExecuteMultiProcess(ctx, sub, func(r *domain.MultiProcessResult) {
+			// Deep copy the result to avoid race conditions
+			copyResult := copyMultiProcessResult(r)
+			select {
+			case updateChan <- copyResult:
+			default:
+			}
+		})
+		// Send final result
+		if result != nil {
+			select {
+			case updateChan <- result:
+			default:
+			}
+		}
+		close(updateChan)
+	}()
+
+	return waitForMultiProcessUpdates(updateChan)
 }
 
 func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
@@ -1154,30 +1223,83 @@ func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
 		return nil
 	}
 
-	// Clear previous results before starting new execution
 	m.multiProcessResult = nil
-	m.showMultiProcess = false
+	m.showMultiProcess = true
 
-	// Ensure executor is using current policy (force recreation if needed)
 	m.executor = nil
 	executor := m.getExecutor()
 	if executor == nil || !executor.HasMultiProcess() {
-		return func() tea.Msg {
-			return multiProcessResultMsg{result: nil}
-		}
+		return func() tea.Msg { return multiProcessResultMsg{result: nil} }
 	}
 
-	// Get current submission
 	sub := filtered[m.cursor].Submission
 	scenario := mp.TestScenarios[scenarioIdx]
-
-	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	m.runCancelFunc = cancel
 	m.isExecuting = true
+	m.selectedProcessIdx = -1
+	m.outputScroll = 0
 
+	updateChan := make(chan *domain.MultiProcessResult, 100)
+	m.multiProcessUpdateChan = updateChan
+
+	go func() {
+		result := executor.ExecuteMultiProcessScenario(ctx, sub, scenario, func(r *domain.MultiProcessResult) {
+			copyResult := copyMultiProcessResult(r)
+			select {
+			case updateChan <- copyResult:
+			default:
+			}
+		})
+		if result != nil {
+			select {
+			case updateChan <- result:
+			default:
+			}
+		}
+		close(updateChan)
+	}()
+
+	return waitForMultiProcessUpdates(updateChan)
+}
+
+func waitForMultiProcessUpdates(updateChan <-chan *domain.MultiProcessResult) tea.Cmd {
 	return func() tea.Msg {
-		result := executor.ExecuteMultiProcessScenario(ctx, sub, scenario, nil)
-		return multiProcessResultMsg{result: result}
+		result, ok := <-updateChan
+		if !ok {
+			// Channel closed, signal completion
+			return multiProcessResultMsg{result: nil}
+		}
+		// Check if all processes are done
+		allDone := true
+		for _, proc := range result.Processes {
+			if proc.Running {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			return multiProcessResultMsg{result: result}
+		}
+		return multiProcessUpdateMsg{result: result}
 	}
+}
+
+func copyMultiProcessResult(r *domain.MultiProcessResult) *domain.MultiProcessResult {
+	if r == nil {
+		return nil
+	}
+	copy := &domain.MultiProcessResult{
+		Processes:     make(map[string]*domain.ProcessResult),
+		Order:         append([]string{}, r.Order...),
+		TotalDuration: r.TotalDuration,
+		AllCompleted:  r.AllCompleted,
+		AllPassed:     r.AllPassed,
+		ScenarioName:  r.ScenarioName,
+	}
+	for name, proc := range r.Processes {
+		procCopy := *proc
+		copy.Processes[name] = &procCopy
+	}
+	return copy
 }
