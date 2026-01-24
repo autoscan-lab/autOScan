@@ -8,20 +8,81 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// List Component
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ListItem represents an item in a selectable list
-type ListItem struct {
-	ID          string
-	Title       string
-	Description string
-	Status      string
-	Extra       interface{}
+func WrapLines(text string, width int) []string {
+	if text == "" {
+		return nil
+	}
+	var wrapped []string
+	for _, line := range strings.Split(text, "\n") {
+		if len(line) <= width {
+			wrapped = append(wrapped, line)
+		} else {
+			for len(line) > width {
+				wrapped = append(wrapped, line[:width])
+				line = line[width:]
+			}
+			if len(line) > 0 {
+				wrapped = append(wrapped, line)
+			}
+		}
+	}
+	return wrapped
 }
 
-// List is a reusable scrollable list component
+func ScrollIndices(totalLines, maxShow, scrollOffset int) (startIdx, endIdx int) {
+	maxScroll := totalLines - maxShow
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	startIdx = scrollOffset
+	if startIdx > maxScroll {
+		startIdx = maxScroll
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx = startIdx + maxShow
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	return startIdx, endIdx
+}
+
+func BoxWidth(termWidth, margin, minWidth int) int {
+	w := termWidth - margin
+	if w < minWidth {
+		w = minWidth
+	}
+	return w
+}
+
+func CursorPrefix(selected bool) string {
+	if selected {
+		return "▸ "
+	}
+	return "  "
+}
+
+func FocusPrefix(focused bool) string {
+	if focused {
+		return "> "
+	}
+	return "  "
+}
+
+func RenderMenuItem(text string, selected bool) string {
+	style := styles.NormalItem
+	if selected {
+		style = styles.SelectedItem
+	}
+	return CursorPrefix(selected) + style.Render(text)
+}
+
+type ListItem struct {
+	ID, Title, Description, Status string
+	Extra                          interface{}
+}
+
 type List struct {
 	Items        []ListItem
 	Cursor       int
@@ -31,7 +92,6 @@ type List struct {
 	ShowIndex    bool
 }
 
-// NewList creates a new list component
 func NewList(visibleRows, width int) List {
 	return List{
 		Items:       []ListItem{},
@@ -40,14 +100,12 @@ func NewList(visibleRows, width int) List {
 	}
 }
 
-// SetItems updates the list items
 func (l *List) SetItems(items []ListItem) {
 	l.Items = items
 	l.Cursor = 0
 	l.ScrollOffset = 0
 }
 
-// MoveUp moves cursor up
 func (l *List) MoveUp() {
 	if l.Cursor > 0 {
 		l.Cursor--
@@ -57,7 +115,6 @@ func (l *List) MoveUp() {
 	}
 }
 
-// MoveDown moves cursor down
 func (l *List) MoveDown() {
 	if l.Cursor < len(l.Items)-1 {
 		l.Cursor++
@@ -67,7 +124,6 @@ func (l *List) MoveDown() {
 	}
 }
 
-// Selected returns the currently selected item
 func (l *List) Selected() *ListItem {
 	if l.Cursor >= 0 && l.Cursor < len(l.Items) {
 		return &l.Items[l.Cursor]
@@ -75,7 +131,6 @@ func (l *List) Selected() *ListItem {
 	return nil
 }
 
-// View renders the list
 func (l *List) View() string {
 	if len(l.Items) == 0 {
 		return styles.SubtleText.Render("  (no items)")
@@ -125,11 +180,6 @@ func (l *List) View() string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Status Badge - Colored status indicators
-// ─────────────────────────────────────────────────────────────────────────────
-
-// StatusBadge returns a styled status indicator
 func StatusBadge(status string) string {
 	switch status {
 	case "clean", "ok", "pass", "success":
@@ -143,7 +193,6 @@ func StatusBadge(status string) string {
 	}
 }
 
-// StatusIcon returns just the icon for a status
 func StatusIcon(status string) string {
 	switch status {
 	case "clean", "ok", "pass", "success":
@@ -159,11 +208,6 @@ func StatusIcon(status string) string {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Toggle Component - Boolean toggle
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Toggle represents a boolean toggle setting
 type Toggle struct {
 	Label       string
 	Description string
@@ -171,7 +215,6 @@ type Toggle struct {
 	Focused     bool
 }
 
-// View renders the toggle
 func (t *Toggle) View() string {
 	checkbox := "[ ]"
 	if t.Value {
@@ -197,11 +240,6 @@ func (t *Toggle) View() string {
 	return line
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Progress Bar
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ProgressBar renders a progress indicator
 func ProgressBar(current, total, width int) string {
 	if total == 0 {
 		return ""
@@ -222,11 +260,6 @@ func ProgressBar(current, total, width int) string {
 	return fmt.Sprintf("[%s] %d/%d", bar, current, total)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section Header
-// ─────────────────────────────────────────────────────────────────────────────
-
-// SectionHeader creates a styled section header
 func SectionHeader(title string, width int) string {
 	titleStyled := styles.HeaderStyle.Render(title)
 	lineWidth := width - lipgloss.Width(title) - 4
@@ -237,11 +270,6 @@ func SectionHeader(title string, width int) string {
 	return titleStyled + " " + styles.SubtleText.Render(line)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Confirm Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ConfirmDialog renders a confirmation prompt
 func ConfirmDialog(message string) string {
 	var b strings.Builder
 
@@ -253,16 +281,10 @@ func ConfirmDialog(message string) string {
 	return b.String()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Key Value Display
-// ─────────────────────────────────────────────────────────────────────────────
-
-// KeyValue renders a key-value pair
 func KeyValue(key, value string) string {
 	return styles.SubtleText.Render(key+": ") + styles.NormalItem.Render(value)
 }
 
-// KeyValueHighlight renders a key-value pair with the value highlighted
 func KeyValueHighlight(key, value string) string {
 	return styles.SubtleText.Render(key+": ") + styles.Highlight.Render(value)
 }

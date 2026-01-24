@@ -9,50 +9,32 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// AnimationTickMsg is sent on each animation frame
 type AnimationTickMsg time.Time
 
-// AnimationTickCmd creates a command that ticks the animation
 func AnimationTickCmd() tea.Cmd {
 	return tea.Tick(time.Millisecond*400, func(t time.Time) tea.Msg {
 		return AnimationTickMsg(t)
 	})
 }
 
-// EyeAnimation handles the animated eye display
 type EyeAnimation struct {
-	frame     int
-	maxFrames int
-	width     int
-	height    int
+	frame, maxFrames, width, height int
 }
 
-// NewEyeAnimation creates a new eye animation
 func NewEyeAnimation() EyeAnimation {
-	return EyeAnimation{
-		frame:     0,
-		maxFrames: 16,
-		width:     22,
-		height:    6,
-	}
+	return EyeAnimation{frame: 0, maxFrames: 16, width: 22, height: 6}
 }
 
-// Update advances the animation frame
 func (e *EyeAnimation) Update(msg tea.Msg) tea.Cmd {
-	switch msg.(type) {
-	case AnimationTickMsg:
+	if _, ok := msg.(AnimationTickMsg); ok {
 		e.frame = (e.frame + 1) % e.maxFrames
 		return AnimationTickCmd()
 	}
 	return nil
 }
 
-// Init starts the animation
-func (e *EyeAnimation) Init() tea.Cmd {
-	return AnimationTickCmd()
-}
+func (e *EyeAnimation) Init() tea.Cmd { return AnimationTickCmd() }
 
-// View renders the current animation frame
 func (e *EyeAnimation) View() string {
 	frames := e.getFrames()
 	if e.frame >= len(frames) {
@@ -61,7 +43,6 @@ func (e *EyeAnimation) View() string {
 	return frames[e.frame]
 }
 
-// getFrames returns all animation frames
 func (e *EyeAnimation) getFrames() []string {
 	eyeStyle := styles.EyeColor
 	pupilStyle := styles.EyePupilColor

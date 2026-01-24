@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/felipetrejos/autoscan/internal/config"
 	"github.com/felipetrejos/autoscan/internal/policy"
+	"github.com/felipetrejos/autoscan/internal/tui/components"
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
@@ -1548,46 +1549,33 @@ func (e *PolicyEditor) View() string {
 		box := styles.BoxStyle(80)
 		var content strings.Builder
 
-		// Use plain text prefix for consistent alignment
-		cursor := func(focused bool) string {
-			if focused {
-				return "> "
-			}
-			return "  "
-		}
-
-		// Name field
-		content.WriteString(cursor(e.processInputs.focusedIdx == 0))
+		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 0))
 		content.WriteString("Name:      ")
 		content.WriteString(e.processInputs.name.View())
 		content.WriteString("\n\n")
 
-		// Source file field
-		content.WriteString(cursor(e.processInputs.focusedIdx == 1))
+		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 1))
 		content.WriteString("Source:    ")
 		content.WriteString(e.processInputs.sourceFile.View())
 		content.WriteString("\n")
 		content.WriteString(styles.SubtleText.Render("             (binary = filename without .c)"))
 		content.WriteString("\n\n")
 
-		// Args field
-		content.WriteString(cursor(e.processInputs.focusedIdx == 2))
+		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 2))
 		content.WriteString("Arguments: ")
 		content.WriteString(e.processInputs.args.View())
 		content.WriteString("\n\n")
 
-		// Delay field
-		content.WriteString(cursor(e.processInputs.focusedIdx == 3))
+		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 3))
 		content.WriteString("Delay (ms):")
 		content.WriteString(e.processInputs.delayMs.View())
 		content.WriteString("\n\n")
 
-		// Save button
 		buttonText := "[ Add Process ]"
 		if e.editingProcessIdx >= 0 {
 			buttonText = "[ Save Changes ]"
 		}
-		content.WriteString(cursor(e.processInputs.focusedIdx == 4))
+		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 4))
 		if e.processInputs.focusedIdx == 4 {
 			content.WriteString(styles.SelectedItem.Render(buttonText))
 		} else {
@@ -1614,48 +1602,35 @@ func (e *PolicyEditor) View() string {
 		box := styles.BoxStyle(80)
 		var content strings.Builder
 
-		// Use plain text prefix for consistent alignment
-		cursor := func(focused bool) string {
-			if focused {
-				return "> "
-			}
-			return "  "
-		}
-
-		// Name field
-		content.WriteString(cursor(e.testCaseInputs.focusedInput == 0))
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 0))
 		content.WriteString("Name:          ")
 		content.WriteString(e.testCaseInputs.name.View())
 		content.WriteString("\n\n")
 
-		// Args field
-		content.WriteString(cursor(e.testCaseInputs.focusedInput == 1))
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 1))
 		content.WriteString("Arguments:     ")
 		content.WriteString(e.testCaseInputs.args.View())
 		content.WriteString("\n")
 		content.WriteString(styles.SubtleText.Render("                   (space-separated)"))
 		content.WriteString("\n\n")
 
-		// Input field
-		content.WriteString(cursor(e.testCaseInputs.focusedInput == 2))
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 2))
 		content.WriteString("Stdin:         ")
 		content.WriteString(e.testCaseInputs.input.View())
 		content.WriteString("\n")
 		content.WriteString(styles.SubtleText.Render("                   (use \\n for newlines)"))
 		content.WriteString("\n\n")
 
-		// Expected exit field
-		content.WriteString(cursor(e.testCaseInputs.focusedInput == 3))
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 3))
 		content.WriteString("Expected Exit: ")
 		content.WriteString(e.testCaseInputs.expectedExit.View())
 		content.WriteString("\n\n")
 
-		// Save button
 		buttonText := "[ Add Test Case ]"
 		if e.editingTestCaseIdx >= 0 {
 			buttonText = "[ Save Changes ]"
 		}
-		content.WriteString(cursor(e.testCaseInputs.focusedInput == 4))
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 4))
 		if e.testCaseInputs.focusedInput == 4 {
 			content.WriteString(styles.SelectedItem.Render(buttonText))
 		} else {
@@ -1686,20 +1661,11 @@ func (e *PolicyEditor) View() string {
 		box := styles.BoxStyle(90)
 		var content strings.Builder
 
-		cursor := func(focused bool) string {
-			if focused {
-				return "> "
-			}
-			return "  "
-		}
-
-		// Scenario name
-		content.WriteString(cursor(e.scenarioInputs.focusedIdx == 0))
+		content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == 0))
 		content.WriteString("Scenario Name: ")
 		content.WriteString(e.scenarioInputs.name.View())
 		content.WriteString("\n\n")
 
-		// Per-process fields
 		content.WriteString(styles.SubtleText.Render("Configure each process:"))
 		content.WriteString("\n\n")
 
@@ -1712,24 +1678,21 @@ func (e *PolicyEditor) View() string {
 			stdinIdx := 2 + (i * 3)
 			exitIdx := 3 + (i * 3)
 
-			// Args field
-			content.WriteString(cursor(e.scenarioInputs.focusedIdx == argsIdx))
+			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == argsIdx))
 			content.WriteString("    Args:  ")
 			if input, ok := e.scenarioInputs.processArgs[proc.Name]; ok {
 				content.WriteString(input.View())
 			}
 			content.WriteString("\n")
 
-			// Stdin field
-			content.WriteString(cursor(e.scenarioInputs.focusedIdx == stdinIdx))
+			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == stdinIdx))
 			content.WriteString("    Stdin: ")
 			if input, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
 				content.WriteString(input.View())
 			}
 			content.WriteString("\n")
 
-			// Expected exit field
-			content.WriteString(cursor(e.scenarioInputs.focusedIdx == exitIdx))
+			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == exitIdx))
 			content.WriteString("    Exit:  ")
 			if input, ok := e.scenarioInputs.processExit[proc.Name]; ok {
 				content.WriteString(input.View())
@@ -1737,12 +1700,11 @@ func (e *PolicyEditor) View() string {
 			content.WriteString("\n\n")
 		}
 
-		// Save button
 		buttonText := "[ Add Scenario ]"
 		if e.editingScenarioIdx >= 0 {
 			buttonText = "[ Save Changes ]"
 		}
-		content.WriteString(cursor(e.scenarioInputs.focusedIdx == saveIdx))
+		content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == saveIdx))
 		if e.scenarioInputs.focusedIdx == saveIdx {
 			content.WriteString(styles.SelectedItem.Render(buttonText))
 		} else {

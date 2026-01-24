@@ -18,7 +18,9 @@
 - Batch compile and grade C submissions
 - Detect banned function calls (e.g., `printf`, `fprintf`)
 - **Run and test compiled submissions** with custom arguments or preset test cases
-- Create and manage grading policies
+- **Multi-process execution** with real-time streaming output
+- **Scrollable output** for viewing long execution results
+- Create and manage grading policies (single-process and multi-process modes)
 - Filter results by status (pass/fail/banned)
 - Export results to JSON or CSV
 - Interactive folder browser for selecting submission directories
@@ -92,21 +94,20 @@ On first run, configs are created at `~/.config/autoscan/`:
 └── settings.yaml    # User preferences
 ```
 
-### Policy Example
+### Policy Example (Single-Process)
 
 ```yaml
 name: "Lab 03 - Processes"
 compile:
   gcc: "gcc"
   flags: ["-Wall", "-Wextra", "-lpthread"]
-  output: "lab03"
+  source_file: "lab03.c"  # Binary name derived automatically (lab03)
 run:
   timeout: "5s"
   test_cases:
     - name: "Basic test"
       args: ["2", "3"]
       expected_exit: 0
-required_files: [S0.c, S1.c]
 library_files:
   - hospital.h    # Header file
   - hospital.o    # Pre-compiled object
@@ -171,6 +172,12 @@ The **Run** tab in the detail view lets you execute compiled submissions:
 - Enter stdin input in the "Stdin" field (use `\n` for newlines)
 - Press Enter on "Run" to execute
 
+**Output Navigation:**
+- Use **↑/↓** to navigate to the output box
+- Press **Enter** to focus for scrolling
+- Use **↑/↓** to scroll through long output
+- Press **Esc** to exit scroll mode
+
 ### Preset Test Cases
 
 Define test cases in your policy for automated testing:
@@ -199,10 +206,10 @@ run:
 **Test case fields:**
 - `name` - Human-readable test name
 - `args` - Array of command-line arguments
-- `input` - Stdin input to provide
+- `input` - Stdin input to provide (use `\n` for newlines)
 - `expected_exit` - Expected exit code (for pass/fail validation)
 
-Press `t` in the Run tab to execute all test cases at once.
+Select a test case and press Enter to run it.
 
 ### Multi-Process Mode
 
@@ -213,9 +220,7 @@ name: "Lab 07 - Message Queues"
 compile:
   gcc: "gcc"
   flags: ["-Wall"]
-  output: "producer"  # Not used in multi-process mode
 run:
-  timeout: "10s"
   multi_process:
     enabled: true
     executables:
@@ -275,9 +280,10 @@ run:
           Consumer: 0
 ```
 
-**Keys:**
-- Press `[m]` to run with default args
-- Press `[1]`, `[2]`, etc. to run specific test scenarios
+**Running Multi-Process:**
+- Select "Run" and press Enter to run with default args
+- Select a test scenario and press Enter to run it
+- Output streams in real-time to each process box
 
 ### Bundled Test Files
 
@@ -300,20 +306,26 @@ Add test files via the policy editor (similar to library files):
 - `[e]` - Use existing bundled file
 - `[d]` - Remove from policy
 
-Press `m` in the Run tab to execute all processes in parallel. Results are shown in a grid layout with pass/fail indicators.
+All processes run in parallel with **real-time streaming output**. Results are shown in a responsive grid layout with pass/fail indicators.
+
+**Output Navigation:**
+- Use **↑/↓** to select a process box
+- Press **Enter** to focus for scrolling
+- Use **↑/↓** to scroll through output
+- Press **Esc** to exit scroll mode
 
 **Configuring via TUI:**
 1. Go to Manage Policies → Edit your policy
-2. Navigate to "Multi-Process" section
+2. Set Execution Mode to "Multi-Process"
 3. Press `[a]` to add a process
 4. Fill in: Name, Source File, Arguments, Start Delay
-5. Press `[e]` to toggle enabled/disabled
+5. Processes are auto-compiled from their source files
 
 **Deadlock Handling:**
 
 If processes get stuck in a deadlock:
-- **Automatic timeout**: Processes are killed after the configured timeout (default 5s)
-- **Manual kill**: Press `Ctrl+K` while running to send SIGKILL 
+- **Manual kill**: Press `Ctrl+K` while running to send SIGKILL to all processes
+- Watch real-time output to know when to kill
 
 ---
 

@@ -261,24 +261,13 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.policyManageCursor == -1 {
 			return m, m.loadBannedList()
 		} else if m.policyManageCursor == 0 {
-			m.policyEditor.Reset()
-			m.policyEditor.SetWidth(m.width)
-			m.currentView = ViewPolicyEditor
-			return m, textinput.Blink
+			return m, m.openPolicyEditor(nil)
 		} else {
-			m.policyEditor.Reset()
-			m.policyEditor.LoadPolicy(m.policies[m.policyManageCursor-1])
-			m.policyEditor.SetWidth(m.width)
-			m.currentView = ViewPolicyEditor
-			return m, textinput.Blink
+			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
 		}
 	case "e":
 		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			m.policyEditor.Reset()
-			m.policyEditor.LoadPolicy(m.policies[m.policyManageCursor-1])
-			m.policyEditor.SetWidth(m.width)
-			m.currentView = ViewPolicyEditor
-			return m, textinput.Blink
+			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
 		}
 	case "d":
 		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
@@ -370,10 +359,7 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor >= m.scrollOffset+m.visibleRows {
 				m.scrollOffset++
 			}
-			m.runResult = nil
-			m.runTestResults = nil
-			m.multiProcessResult = nil
-			m.showMultiProcess = false
+			m.clearRunResults()
 		}
 	case "k", "up":
 		if m.cursor > 0 {
@@ -381,20 +367,14 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor < m.scrollOffset {
 				m.scrollOffset--
 			}
-			m.runResult = nil
-			m.runTestResults = nil
-			m.multiProcessResult = nil
-			m.showMultiProcess = false
+			m.clearRunResults()
 		}
 	case "enter":
 		if len(filtered) > 0 {
 			m.currentView = ViewDetails
 			m.detailsTab = 0
 			m.detailScroll = 0
-			m.runResult = nil
-			m.runTestResults = nil
-			m.multiProcessResult = nil
-			m.showMultiProcess = false
+			m.clearRunResults()
 			m.executor = nil
 		}
 	case "f":
@@ -488,8 +468,7 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewSubmissions
 		m.expandedFuncs = nil
 		m.bannedCursor = 0
-		m.runResult = nil
-		m.runTestResults = nil
+		m.clearRunResults()
 	}
 	return m, nil
 }
@@ -763,8 +742,7 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		m.currentView = ViewSubmissions
 		m.expandedFuncs = nil
-		m.runResult = nil
-		m.runTestResults = nil
+		m.clearRunResults()
 		m.runArgsInput.Blur()
 		m.runStdinInput.Blur()
 		return m, nil
@@ -897,10 +875,7 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.scrollOffset = 0
 	m.runError = ""
 	m.executor = nil
-	m.runResult = nil
-	m.runTestResults = nil
-	m.multiProcessResult = nil
-	m.showMultiProcess = false
+	m.clearRunResults()
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries

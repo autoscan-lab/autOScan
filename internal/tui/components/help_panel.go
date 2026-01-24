@@ -8,21 +8,17 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// HelpItem represents a single keyboard shortcut
 type HelpItem struct {
-	Key  string
-	Desc string
+	Key, Desc string
 }
 
-// HelpPanel displays tips and shortcuts on the home screen
 type HelpPanel struct {
-	width        int
-	version      string
-	policyCount  int
-	shortcuts    []HelpItem
+	width       int
+	version     string
+	policyCount int
+	shortcuts   []HelpItem
 }
 
-// NewHelpPanel creates a new help panel
 func NewHelpPanel(width int, version string) HelpPanel {
 	return HelpPanel{
 		width:   width,
@@ -36,17 +32,9 @@ func NewHelpPanel(width int, version string) HelpPanel {
 	}
 }
 
-// SetPolicyCount updates the policy count display
-func (h *HelpPanel) SetPolicyCount(count int) {
-	h.policyCount = count
-}
+func (h *HelpPanel) SetPolicyCount(count int) { h.policyCount = count }
+func (h *HelpPanel) SetWidth(width int)       { h.width = width }
 
-// SetWidth updates the panel width
-func (h *HelpPanel) SetWidth(width int) {
-	h.width = width
-}
-
-// View renders the help panel
 func (h *HelpPanel) View() string {
 	var b strings.Builder
 
@@ -125,7 +113,6 @@ func (h *HelpPanel) View() string {
 	return panelStyle.Render(b.String())
 }
 
-// RenderHelpBar creates a simple inline help bar for any view
 func RenderHelpBar(items []HelpItem) string {
 	var parts []string
 	for _, item := range items {
@@ -136,12 +123,10 @@ func RenderHelpBar(items []HelpItem) string {
 	return "  " + strings.Join(parts, "  •  ")
 }
 
-// ContextualHelp provides context-aware tips based on menu selection
 type ContextualHelp struct {
 	tips map[int][]string
 }
 
-// NewContextualHelp creates contextual help tips
 func NewContextualHelp() ContextualHelp {
 	return ContextualHelp{
 		tips: map[int][]string{
@@ -154,7 +139,6 @@ func NewContextualHelp() ContextualHelp {
 	}
 }
 
-// GetTips returns tips for a given menu index
 func (c *ContextualHelp) GetTips(menuIndex int) []string {
 	if tips, ok := c.tips[menuIndex]; ok {
 		return tips

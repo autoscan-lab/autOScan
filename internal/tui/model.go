@@ -210,6 +210,23 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.loadPolicies(), m.spinner.Tick, m.eyeAnimation.Init())
 }
 
+func (m *Model) clearRunResults() {
+	m.runResult = nil
+	m.runTestResults = nil
+	m.multiProcessResult = nil
+	m.showMultiProcess = false
+}
+
+func (m *Model) openPolicyEditor(p *policy.Policy) tea.Cmd {
+	m.policyEditor.Reset()
+	if p != nil {
+		m.policyEditor.LoadPolicy(p)
+	}
+	m.policyEditor.SetWidth(m.width)
+	m.currentView = ViewPolicyEditor
+	return textinput.Blink
+}
+
 func Start(cfg Config) error {
 	p := tea.NewProgram(New(cfg), tea.WithAltScreen())
 	_, err := p.Run()

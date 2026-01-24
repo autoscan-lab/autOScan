@@ -164,11 +164,7 @@ func (m Model) renderPolicySelect() string {
 	b.WriteString(styles.HeaderStyle.Render("Select a Policy"))
 	b.WriteString("\n\n")
 
-	// Use full width with minimum
-	boxWidth := m.width - 8
-	if boxWidth < 60 {
-		boxWidth = 60
-	}
+	boxWidth := components.BoxWidth(m.width, 8, 60)
 
 	if len(m.policies) == 0 {
 		box := styles.WarningBoxStyle(boxWidth)
@@ -190,14 +186,8 @@ func (m Model) renderPolicySelect() string {
 		list.WriteString("\n\n")
 
 		for i, p := range m.policies {
-			cursor := "  "
-			style := styles.NormalItem
-			if i == m.selectedPolicy {
-				cursor = "▸ "
-				style = styles.SelectedItem
-			}
-
-			list.WriteString(fmt.Sprintf("%s%s\n", cursor, style.Render(p.Name)))
+			list.WriteString(components.RenderMenuItem(p.Name, i == m.selectedPolicy))
+			list.WriteString("\n")
 		}
 
 		b.WriteString(box.Render(list.String()))
@@ -274,10 +264,7 @@ func (m Model) renderPolicyManage() string {
 	b.WriteString(styles.HeaderStyle.Render("Manage Policies"))
 	b.WriteString("\n\n")
 
-	boxWidth := m.width - 8
-	if boxWidth < 60 {
-		boxWidth = 60
-	}
+	boxWidth := components.BoxWidth(m.width, 8, 60)
 
 	configBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -289,13 +276,7 @@ func (m Model) renderPolicyManage() string {
 	configSection.WriteString(styles.SubtleText.Render("Configuration"))
 	configSection.WriteString("\n\n")
 
-	if m.policyManageCursor == -1 {
-		configSection.WriteString("▸ ")
-		configSection.WriteString(styles.SelectedItem.Render("Edit Banned Functions"))
-	} else {
-		configSection.WriteString("  ")
-		configSection.WriteString(styles.NormalItem.Render("Edit Banned Functions"))
-	}
+	configSection.WriteString(components.RenderMenuItem("Edit Banned Functions", m.policyManageCursor == -1))
 	configSection.WriteString("\n")
 	configSection.WriteString(styles.SubtleText.Render("    Global list of prohibited function calls"))
 
@@ -312,13 +293,7 @@ func (m Model) renderPolicyManage() string {
 	policySection.WriteString(styles.PrimaryText.Render(fmt.Sprintf("Policies (%d)", len(m.policies))))
 	policySection.WriteString("\n\n")
 
-	if m.policyManageCursor == 0 {
-		policySection.WriteString("▸ ")
-		policySection.WriteString(styles.SelectedItem.Render("+ Create New Policy"))
-	} else {
-		policySection.WriteString("  ")
-		policySection.WriteString(styles.NormalItem.Render("+ Create New Policy"))
-	}
+	policySection.WriteString(components.RenderMenuItem("+ Create New Policy", m.policyManageCursor == 0))
 	policySection.WriteString("\n")
 
 	if len(m.policies) > 0 {
@@ -326,13 +301,7 @@ func (m Model) renderPolicyManage() string {
 	}
 
 	for i, p := range m.policies {
-		if m.policyManageCursor == i+1 {
-			policySection.WriteString("▸ ")
-			policySection.WriteString(styles.SelectedItem.Render(p.Name))
-		} else {
-			policySection.WriteString("  ")
-			policySection.WriteString(styles.NormalItem.Render(p.Name))
-		}
+		policySection.WriteString(components.RenderMenuItem(p.Name, m.policyManageCursor == i+1))
 		policySection.WriteString("\n")
 	}
 
@@ -416,11 +385,7 @@ func (m Model) renderDirectoryInput() string {
 	b.WriteString(styles.HeaderStyle.Render("Select Directory"))
 	b.WriteString("\n\n")
 
-	// Use full width
-	boxWidth := m.width - 8
-	if boxWidth < 60 {
-		boxWidth = 60
-	}
+	boxWidth := components.BoxWidth(m.width, 8, 60)
 	box := styles.BoxStyle(boxWidth)
 
 	var content strings.Builder
@@ -1385,7 +1350,6 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 
 	var content strings.Builder
 
-	// Combine output first to calculate scroll info
 	allOutput := proc.Stdout
 	if proc.Stderr != "" {
 		if allOutput != "" {
@@ -1395,45 +1359,12 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 		}
 	}
 
-	// Wrap lines and calculate scroll parameters
-	var wrappedLines []string
-	if allOutput != "" {
-		rawLines := strings.Split(allOutput, "\n")
-		for _, line := range rawLines {
-			if len(line) <= contentWidth {
-				wrappedLines = append(wrappedLines, line)
-			} else {
-				for len(line) > contentWidth {
-					wrappedLines = append(wrappedLines, line[:contentWidth])
-					line = line[contentWidth:]
-				}
-				if len(line) > 0 {
-					wrappedLines = append(wrappedLines, line)
-				}
-			}
-		}
-	}
-
-	maxShow := 8 // Fixed size for consistent height
+	wrappedLines := components.WrapLines(allOutput, contentWidth)
+	maxShow := 8
 	minContentLines := maxShow
 	totalLines := len(wrappedLines)
-	maxScroll := totalLines - maxShow
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	startIdx := scrollOffset
-	if startIdx > maxScroll {
-		startIdx = maxScroll
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	endIdx := startIdx + maxShow
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
+	startIdx, endIdx := components.ScrollIndices(totalLines, maxShow, scrollOffset)
 
-	// Header with scroll info on same line
 	header := proc.Name
 	sourceInfo := fmt.Sprintf(" (%s)", proc.SourceFile)
 	if len(header)+len(sourceInfo) > contentWidth-10 {
@@ -1548,44 +1479,11 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 		}
 	}
 
-	// Calculate scroll parameters
-	var wrappedLines []string
-	if allOutput != "" {
-		rawLines := strings.Split(allOutput, "\n")
-		for _, line := range rawLines {
-			if len(line) <= contentWidth {
-				wrappedLines = append(wrappedLines, line)
-			} else {
-				for len(line) > contentWidth {
-					wrappedLines = append(wrappedLines, line[:contentWidth])
-					line = line[contentWidth:]
-				}
-				if len(line) > 0 {
-					wrappedLines = append(wrappedLines, line)
-				}
-			}
-		}
-	}
-
-	maxShow := 15 // Fixed size, no change between focused/unfocused
+	wrappedLines := components.WrapLines(allOutput, contentWidth)
+	maxShow := 15
 	totalLines := len(wrappedLines)
-	maxScroll := totalLines - maxShow
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	startIdx := m.outputScroll
-	if startIdx > maxScroll {
-		startIdx = maxScroll
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	endIdx := startIdx + maxShow
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
+	startIdx, endIdx := components.ScrollIndices(totalLines, maxShow, m.outputScroll)
 
-	// Add scroll info to header line (same line, no layout shift)
 	if isFocused && totalLines > maxShow {
 		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
 	}
