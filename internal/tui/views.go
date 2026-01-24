@@ -14,7 +14,6 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// ASCII Art Logo - Compact version for new layout
 const logo = `
  █████╗ ██╗   ██╗████████╗ ██████╗ ███████╗ ██████╗ █████╗ ███╗   ██╗
 ██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔════╝██╔════╝██╔══██╗████╗  ██║
@@ -24,8 +23,6 @@ const logo = `
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝`
 
 const tagline = "OS Lab Submission Grader"
-
-// Main View Router
 
 func (m Model) View() string {
 	var content string
@@ -73,8 +70,6 @@ func (m Model) View() string {
 	)
 }
 
-// Home View
-
 func (m Model) renderHome() string {
 	var b strings.Builder
 
@@ -92,22 +87,13 @@ func (m Model) renderHome() string {
 		helpPanelWidth = 30
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Top Section: Logo + Animation side by side
-	// ─────────────────────────────────────────────────────────────────────────
-
-	// Logo
 	logoStyled := styles.LogoStyle.Render(logo)
 	taglineStyled := styles.SubtleText.Render("     " + tagline)
-
-	// Animation (positioned to the right)
 	animation := m.eyeAnimation.View()
 	animationBox := lipgloss.NewStyle().
 		Width(20).
 		Align(lipgloss.Center).
 		Render(animation)
-
-	// Place logo and animation in the same horizontal space
 	logoWithTagline := logoStyled + "\n" + taglineStyled
 
 	topSection := lipgloss.JoinHorizontal(
@@ -119,11 +105,6 @@ func (m Model) renderHome() string {
 	b.WriteString(topSection)
 	b.WriteString("\n\n")
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Bottom Section: Menu + Help Panel
-	// ─────────────────────────────────────────────────────────────────────────
-
-	// Menu box
 	menuBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Primary).
@@ -161,13 +142,9 @@ func (m Model) renderHome() string {
 	}
 
 	menuRendered := menuBox.Render(menu.String())
-
-	// Help panel
 	m.helpPanel.SetWidth(helpPanelWidth)
 	m.helpPanel.SetPolicyCount(len(m.policies))
 	helpRendered := m.helpPanel.View()
-
-	// Combine menu and help panel horizontally
 	bottomSection := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		menuRendered,
@@ -175,18 +152,11 @@ func (m Model) renderHome() string {
 	)
 
 	b.WriteString(bottomSection)
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Footer
-	// ─────────────────────────────────────────────────────────────────────────
-
 	b.WriteString("\n\n")
 	b.WriteString(styles.SubtleText.Render("  Use ↑/↓ to navigate, Enter to select"))
 
 	return b.String()
 }
-
-// Policy Select View
 
 func (m Model) renderPolicySelect() string {
 	var b strings.Builder
@@ -298,23 +268,16 @@ func (m Model) renderPolicySelect() string {
 	return b.String()
 }
 
-// Policy Manage View
-
 func (m Model) renderPolicyManage() string {
 	var b strings.Builder
 
 	b.WriteString(styles.HeaderStyle.Render("Manage Policies"))
 	b.WriteString("\n\n")
 
-	// Use full width
 	boxWidth := m.width - 8
 	if boxWidth < 60 {
 		boxWidth = 60
 	}
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Section 1: Configuration
-	// ─────────────────────────────────────────────────────────────────────────
 
 	configBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -326,7 +289,6 @@ func (m Model) renderPolicyManage() string {
 	configSection.WriteString(styles.SubtleText.Render("Configuration"))
 	configSection.WriteString("\n\n")
 
-	// Edit banned functions option
 	if m.policyManageCursor == -1 {
 		configSection.WriteString("▸ ")
 		configSection.WriteString(styles.SelectedItem.Render("Edit Banned Functions"))
@@ -340,10 +302,6 @@ func (m Model) renderPolicyManage() string {
 	b.WriteString(configBox.Render(configSection.String()))
 	b.WriteString("\n\n")
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Section 2: Policies
-	// ─────────────────────────────────────────────────────────────────────────
-
 	policyBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Primary).
@@ -354,7 +312,6 @@ func (m Model) renderPolicyManage() string {
 	policySection.WriteString(styles.PrimaryText.Render(fmt.Sprintf("Policies (%d)", len(m.policies))))
 	policySection.WriteString("\n\n")
 
-	// Create new policy option
 	if m.policyManageCursor == 0 {
 		policySection.WriteString("▸ ")
 		policySection.WriteString(styles.SelectedItem.Render("+ Create New Policy"))
@@ -364,12 +321,10 @@ func (m Model) renderPolicyManage() string {
 	}
 	policySection.WriteString("\n")
 
-	// Separator before existing policies
 	if len(m.policies) > 0 {
 		policySection.WriteString("\n")
 	}
 
-	// Existing policies
 	for i, p := range m.policies {
 		if m.policyManageCursor == i+1 {
 			policySection.WriteString("▸ ")
@@ -381,7 +336,6 @@ func (m Model) renderPolicyManage() string {
 		policySection.WriteString("\n")
 	}
 
-	// Show selected policy details at bottom
 	if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
 		p := m.policies[m.policyManageCursor-1]
 		policySection.WriteString("\n")
@@ -392,7 +346,6 @@ func (m Model) renderPolicyManage() string {
 		}
 	}
 
-	// Confirm delete dialog
 	if m.confirmDelete && m.policyManageCursor > 0 {
 		policySection.WriteString("\n")
 		policySection.WriteString(components.ConfirmDialog("Delete this policy?"))
@@ -410,8 +363,6 @@ func (m Model) renderPolicyManage() string {
 
 	return b.String()
 }
-
-// Settings View (Updated with KeepBinaries)
 
 func (m Model) renderSettings() string {
 	var b strings.Builder
@@ -459,8 +410,6 @@ func (m Model) renderSettings() string {
 	return b.String()
 }
 
-// Directory Input View
-
 func (m Model) renderDirectoryInput() string {
 	var b strings.Builder
 
@@ -497,12 +446,9 @@ func (m Model) renderDirectoryInput() string {
 	return b.String()
 }
 
-// Submissions View
-
 func (m Model) renderSubmissions() string {
 	var b strings.Builder
 
-	// Header with policy name
 	policyName := "Unknown Policy"
 	if m.selectedPolicy < len(m.policies) {
 		policyName = m.policies[m.selectedPolicy].Name
@@ -1673,8 +1619,6 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 	return box.Render(content.String())
 }
 
-// Export View
-
 func (m Model) renderExport() string {
 	var b strings.Builder
 
@@ -1769,8 +1713,6 @@ func (m Model) doExport() tea.Cmd {
 		return exportDoneMsg{format: format, path: path}
 	}
 }
-
-// Banned Editor
 
 func (m Model) renderBannedEditor() string {
 	var b strings.Builder

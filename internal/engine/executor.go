@@ -14,7 +14,6 @@ import (
 	"github.com/felipetrejos/autoscan/internal/policy"
 )
 
-// unescapeInput converts escape sequences in input strings to actual characters
 func unescapeInput(s string) string {
 	s = strings.ReplaceAll(s, "\\n", "\n")
 	s = strings.ReplaceAll(s, "\\t", "\t")
@@ -84,9 +83,7 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 	cmd := exec.CommandContext(timeoutCtx, binaryPath, resolvedArgs...)
 	cmd.Dir = binaryDir
 	if input != "" {
-		// Convert escape sequences to actual characters
-		input = unescapeInput(input)
-		cmd.Stdin = strings.NewReader(input)
+		cmd.Stdin = strings.NewReader(unescapeInput(input))
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -247,7 +244,6 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				cmd.Stdin = strings.NewReader(unescapeInput(input))
 			}
 
-			// Setup streaming pipes
 			stdoutPipe, _ := cmd.StdoutPipe()
 			stderrPipe, _ := cmd.StderrPipe()
 
@@ -258,7 +254,6 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				return
 			}
 
-			// Send initial update that process has started
 			if onUpdate != nil {
 				mu.Lock()
 				result.TotalDuration = time.Since(start)
@@ -267,7 +262,6 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				mu.Unlock()
 			}
 
-			// Stream stdout
 			var stdoutDone, stderrDone sync.WaitGroup
 			stdoutDone.Add(1)
 			stderrDone.Add(1)
@@ -362,7 +356,6 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 	return result
 }
 
-// computeMultiProcessStatus updates AllCompleted and AllPassed based on current process states
 func computeMultiProcessStatus(result *domain.MultiProcessResult) {
 	allDone := true
 	allPassed := true

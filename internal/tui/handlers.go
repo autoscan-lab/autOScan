@@ -225,13 +225,11 @@ func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		if m.selectedPolicy < len(m.policies)-1 {
 			m.selectedPolicy++
-			// Clear executor when policy changes to force recreation
 			m.executor = nil
 		}
 	case "k", "up":
 		if m.selectedPolicy > 0 {
 			m.selectedPolicy--
-			// Clear executor when policy changes to force recreation
 			m.executor = nil
 		}
 	case "enter":
@@ -304,7 +302,6 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Only handle ESC at the top level if policy editor is not in a sub-mode
 	if msg.String() == "esc" && !m.policyEditor.InSubMode() {
 		m.currentView = ViewPolicyManage
 		m.policyEditor.errorMsg = ""
@@ -314,8 +311,6 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	cmd := m.policyEditor.Update(msg)
 	return m, cmd
 }
-
-// Settings Handler (Updated with KeepBinaries)
 
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -328,7 +323,6 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settingsCursor--
 		}
 	case "enter", " ":
-		// Toggle current setting
 		switch m.settingsCursor {
 		case 0:
 			m.settings.ShortNames = !m.settings.ShortNames
@@ -376,7 +370,6 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor >= m.scrollOffset+m.visibleRows {
 				m.scrollOffset++
 			}
-			// Clear run results when switching submissions
 			m.runResult = nil
 			m.runTestResults = nil
 			m.multiProcessResult = nil
@@ -388,7 +381,6 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor < m.scrollOffset {
 				m.scrollOffset--
 			}
-			// Clear run results when switching submissions
 			m.runResult = nil
 			m.runTestResults = nil
 			m.multiProcessResult = nil
@@ -399,12 +391,10 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentView = ViewDetails
 			m.detailsTab = 0
 			m.detailScroll = 0
-			// Clear previous run results when entering details
 			m.runResult = nil
 			m.runTestResults = nil
 			m.multiProcessResult = nil
 			m.showMultiProcess = false
-			// Reset executor to ensure it uses current policy
 			m.executor = nil
 		}
 	case "f":
@@ -427,7 +417,6 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Helper to get the number of banned functions for current submission
 	getBannedFuncCount := func() int {
 		filtered := m.filteredResults()
 		if m.cursor >= len(filtered) {
@@ -436,24 +425,22 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return len(filtered[m.cursor].Scan.HitsByFunction)
 	}
 
-	// Handle Run tab input fields
 	if m.detailsTab == 3 {
 		return m.updateRunTab(msg)
 	}
 
 	switch msg.String() {
 	case "tab":
-		m.detailsTab = (m.detailsTab + 1) % 4 // Now 4 tabs
+		m.detailsTab = (m.detailsTab + 1) % 4
 		m.detailScroll = 0
 		m.bannedCursor = 0
-		// Reset run tab state when entering
 		if m.detailsTab == 3 {
 			m.runInputFocused = 0
 			m.runArgsInput.Focus()
 			m.runStdinInput.Blur()
 		}
 	case "shift+tab":
-		m.detailsTab = (m.detailsTab + 3) % 4 // Now 4 tabs
+		m.detailsTab = (m.detailsTab + 3) % 4
 		m.detailScroll = 0
 		m.bannedCursor = 0
 		if m.detailsTab == 3 {
@@ -463,7 +450,6 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "j", "down":
 		if m.detailsTab == 1 {
-			// Only allow scrolling if there are more functions below
 			maxCursor := getBannedFuncCount() - 1
 			if maxCursor >= 0 && m.bannedCursor < maxCursor {
 				m.bannedCursor++
@@ -491,7 +477,7 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				for fn := range r.Scan.HitsByFunction {
 					funcNames = append(funcNames, fn)
 				}
-				sort.Strings(funcNames) // Must sort - same as view
+				sort.Strings(funcNames)
 				if m.bannedCursor < len(funcNames) {
 					fn := funcNames[m.bannedCursor]
 					m.expandedFuncs[fn] = !m.expandedFuncs[fn]
@@ -508,13 +494,10 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateRunTab handles input for the Run tab
 func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Allow kill command while executing
 	if m.isExecuting {
 		switch msg.String() {
 		case "ctrl+k", "K":
-			// Kill all running processes
 			if m.runCancelFunc != nil {
 				m.runCancelFunc()
 				m.runCancelFunc = nil
@@ -526,7 +509,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check if multi-process mode is enabled
 	isMultiProcess := false
 	var mp *policy.MultiProcessConfig
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
@@ -538,13 +520,10 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if isMultiProcess {
 		scenarioCount := len(mp.TestScenarios)
-		maxFocus := scenarioCount // 0=defaults, 1..N=scenarios
+		maxFocus := scenarioCount
 
-		// If a process box is focused for scrolling
 		if m.multiProcessResult != nil && m.selectedProcessIdx >= 0 {
 			numProcs := len(m.multiProcessResult.Order)
-
-			// Calculate max scroll for current process (maxShow = 8 in view)
 			maxScroll := 0
 			if m.selectedProcessIdx < numProcs {
 				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
@@ -575,10 +554,8 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// If results exist, allow navigating to process boxes
 		if m.multiProcessResult != nil && len(m.multiProcessResult.Order) > 0 {
 			numProcs := len(m.multiProcessResult.Order)
-			// runInputFocused: 0=Run, 1..N=scenarios, N+1..N+numProcs=process boxes
 			processStartIdx := 1 + scenarioCount
 
 			switch msg.String() {
@@ -611,7 +588,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
 					return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
 				} else if m.runInputFocused >= processStartIdx {
-					// Focus a process box for scrolling
 					m.selectedProcessIdx = m.runInputFocused - processStartIdx
 					m.outputScroll = 0
 					return m, nil
@@ -636,7 +612,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// No results yet - simple navigation
 		switch msg.String() {
 		case "tab":
 			m.detailsTab = 0
@@ -687,23 +662,15 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// SINGLE-PROCESS MODE NAVIGATION
-	// Focus: 0=args, 1=stdin, 2=run button, 3+=test cases
-	// ══════════════════════════════════════════════════════════════════════════
-
 	testCaseCount := 0
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
 	}
 
-	// maxFocus: 0=args, 1=stdin, 2=run, 3..N=test cases, N+1=output box (if result exists)
 	maxFocus := 2 + testCaseCount
 	outputBoxIdx := maxFocus + 1
 
-	// If output box is focused for scrolling
 	if m.runResult != nil && m.selectedProcessIdx >= 0 {
-		// Calculate max scroll based on output lines (maxShow = 15 in view)
 		outputLen := len(strings.Split(m.runResult.Stdout+m.runResult.Stderr, "\n"))
 		maxScroll := outputLen - 15
 		if maxScroll < 0 {
@@ -746,7 +713,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "down", "j":
-		// Allow navigating to output box if result exists
 		maxIdx := maxFocus
 		if m.runResult != nil {
 			maxIdx = outputBoxIdx
@@ -777,7 +743,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		// Focus output box for scrolling
 		if m.runResult != nil && m.runInputFocused == outputBoxIdx {
 			m.selectedProcessIdx = 0
 			m.outputScroll = 0
@@ -931,7 +896,6 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.cursor = 0
 	m.scrollOffset = 0
 	m.runError = ""
-	// Clear executor and run results to ensure fresh state
 	m.executor = nil
 	m.runResult = nil
 	m.runTestResults = nil
@@ -1053,8 +1017,6 @@ func (m Model) filteredResults() []domain.SubmissionResult {
 
 	return filtered
 }
-
-// Execution Commands
 
 func (m *Model) getExecutor() *engine.Executor {
 	if m.executor != nil {
@@ -1188,14 +1150,12 @@ func (m *Model) executeMultiProcess() tea.Cmd {
 
 	go func() {
 		result := executor.ExecuteMultiProcess(ctx, sub, func(r *domain.MultiProcessResult) {
-			// Deep copy the result to avoid race conditions
 			copyResult := copyMultiProcessResult(r)
 			select {
 			case updateChan <- copyResult:
 			default:
 			}
 		})
-		// Send final result
 		if result != nil {
 			select {
 			case updateChan <- result:
@@ -1267,18 +1227,9 @@ func waitForMultiProcessUpdates(updateChan <-chan *domain.MultiProcessResult) te
 	return func() tea.Msg {
 		result, ok := <-updateChan
 		if !ok {
-			// Channel closed, signal completion
 			return multiProcessResultMsg{result: nil}
 		}
-		// Check if all processes are done
-		allDone := true
-		for _, proc := range result.Processes {
-			if proc.Running {
-				allDone = false
-				break
-			}
-		}
-		if allDone {
+		if result.AllCompleted {
 			return multiProcessResultMsg{result: result}
 		}
 		return multiProcessUpdateMsg{result: result}

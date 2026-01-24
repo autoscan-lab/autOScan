@@ -15,117 +15,91 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// PolicyEditorField represents which field is being edited
 type PolicyEditorField int
 
 const (
-	// General settings
 	FieldName PolicyEditorField = iota
 	FieldFlags
 	FieldLibraryFiles
 	FieldTestFiles
-
-	// Execution mode
-	FieldMultiProcessToggle // Toggle between single/multi-process
-
-	// Single-process mode fields
-	FieldSourceFile // Source file (e.g., "S5.c" -> binary "S5")
-	FieldTestCases  // Test cases for single-process
-
-	// Multi-process mode fields
-	FieldMultiProcess      // Process list section
-	FieldMultiProcessTests // Multi-process test scenarios section
-
-	// Actions
+	FieldMultiProcessToggle
+	FieldSourceFile
+	FieldTestCases
+	FieldMultiProcess
+	FieldMultiProcessTests
 	FieldSave
 	FieldCancel
 )
 
-// PolicyEditor handles creating and editing policies
 type PolicyEditor struct {
 	isNew    bool
 	filePath string
-	width    int // Terminal width for responsive layout
+	width    int
 
-	// General settings input fields
-	nameInput  textinput.Model
-	flagsInput textinput.Model
+	nameInput       textinput.Model
+	flagsInput      textinput.Model
+	sourceFileInput textinput.Model
 
-	// Single-process mode input
-	sourceFileInput textinput.Model // e.g., "S5.c" -> binary "S5"
-
-	// Library files (list of filenames)
 	libraryFiles       []string
 	libraryFilesCursor int
+	testFiles          []string
+	testFilesCursor    int
 
-	// Test files (list of filenames)
-	testFiles       []string
-	testFilesCursor int
-
-	// Folder browser for selecting files
 	folderBrowser    FolderBrowser
 	browsingForLibs  bool
 	browsingForTests bool
 	browsingStartDir string
 
-	// Existing libraries selection
-	showingExistingLibs  bool
-	existingLibs         []string
-	existingLibsCursor   int
+	showingExistingLibs bool
+	existingLibs        []string
+	existingLibsCursor  int
 
-	// Existing test files selection
 	showingExistingTests bool
 	existingTests        []string
 	existingTestsCursor  int
 
-	// Test cases
 	testCases          []policy.TestCase
 	testCasesCursor    int
 	editingTestCase    bool
-	editingTestCaseIdx int // -1 for new, >= 0 for editing existing
+	editingTestCaseIdx int
 	testCaseInputs     struct {
 		name         textinput.Model
 		args         textinput.Model
 		input        textinput.Model
 		expectedExit textinput.Model
-		focusedInput int // 0=name, 1=args, 2=input, 3=exit
+		focusedInput int
 	}
 
-	// Run timeout
-	runTimeout string
-
-	// Multi-process config
+	runTimeout          string
 	multiProcessEnabled bool
 	multiProcessExecs   []policy.ProcessConfig
 	multiProcessCursor  int
 	editingProcess      bool
-	editingProcessIdx   int // -1 for new, >= 0 for editing existing
+	editingProcessIdx   int
 	processInputs       struct {
 		name       textinput.Model
 		sourceFile textinput.Model
 		args       textinput.Model
 		delayMs    textinput.Model
-		focusedIdx int // 0=name, 1=source, 2=args, 3=delay, 4=save
+		focusedIdx int
 	}
 
-	// Multi-process test scenarios
 	testScenarios          []policy.MultiProcessScenario
 	testScenariosCursor    int
 	editingScenario        bool
-	editingScenarioIdx     int // -1 for new, >= 0 for editing existing
+	editingScenarioIdx     int
 	scenarioInputs         struct {
 		name         textinput.Model
-		processArgs  map[string]textinput.Model // process name -> args input
-		processStdin map[string]textinput.Model // process name -> stdin input
-		processExit  map[string]textinput.Model // process name -> expected exit input
-		focusedIdx   int                        // 0=name, then (1 + i*3)=args, (2 + i*3)=stdin, (3 + i*3)=exit for each process, last=save
+		processArgs  map[string]textinput.Model
+		processStdin map[string]textinput.Model
+		processExit  map[string]textinput.Model
+		focusedIdx   int
 	}
 
 	focusedField PolicyEditorField
 	errorMsg     string
 }
 
-// NewPolicyEditor creates a new policy editor
 func NewPolicyEditor(width, height int) PolicyEditor {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "Lab 01 - Introduction"
@@ -139,16 +113,13 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	flagsInput.Width = 45
 	flagsInput.SetValue("-Wall -Wextra")
 
-	// Single-process source file input
 	sourceFileInput := textinput.New()
 	sourceFileInput.Placeholder = "S5.c (binary will be S5)"
 	sourceFileInput.CharLimit = 50
 	sourceFileInput.Width = 45
 
-	// Initialize folder browser for library file selection
 	cwd, _ := os.Getwd()
 
-	// Test case input fields
 	tcNameInput := textinput.New()
 	tcNameInput.Placeholder = "Test name"
 	tcNameInput.CharLimit = 50
@@ -229,7 +200,6 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	return pe
 }
 
-// LoadPolicy loads an existing policy for editing
 func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.isNew = false
 	e.filePath = p.FilePath
@@ -238,17 +208,14 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.flagsInput.SetValue(strings.Join(p.Compile.Flags, " "))
 	e.sourceFileInput.SetValue(p.Compile.SourceFile)
 
-	// Copy library files
 	e.libraryFiles = make([]string, len(p.LibraryFiles))
 	copy(e.libraryFiles, p.LibraryFiles)
 	e.libraryFilesCursor = 0
 
-	// Copy test files
 	e.testFiles = make([]string, len(p.TestFiles))
 	copy(e.testFiles, p.TestFiles)
 	e.testFilesCursor = 0
 
-	// Copy test cases
 	e.testCases = make([]policy.TestCase, len(p.Run.TestCases))
 	copy(e.testCases, p.Run.TestCases)
 	e.testCasesCursor = 0
@@ -257,12 +224,10 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 		e.runTimeout = "5s"
 	}
 
-	// Copy multi-process config
 	if p.Run.MultiProcess != nil {
 		e.multiProcessEnabled = p.Run.MultiProcess.Enabled
 		e.multiProcessExecs = make([]policy.ProcessConfig, len(p.Run.MultiProcess.Executables))
 		copy(e.multiProcessExecs, p.Run.MultiProcess.Executables)
-		// Copy test scenarios
 		e.testScenarios = make([]policy.MultiProcessScenario, len(p.Run.MultiProcess.TestScenarios))
 		copy(e.testScenarios, p.Run.MultiProcess.TestScenarios)
 	} else {
@@ -274,12 +239,10 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.testScenariosCursor = 0
 }
 
-// SetWidth sets the terminal width for responsive layout
 func (e *PolicyEditor) SetWidth(w int) {
 	e.width = w
 }
 
-// Reset resets the editor for a new policy
 func (e *PolicyEditor) Reset() {
 	e.isNew = true
 	e.filePath = ""
@@ -504,9 +467,7 @@ func (e *PolicyEditor) loadExistingLibraries() {
 	}
 }
 
-// Update handles input for the policy editor
 func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
-	// If showing existing libraries picker
 	if e.showingExistingLibs {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -1574,9 +1535,7 @@ func (e *PolicyEditor) save() tea.Cmd {
 	}
 }
 
-// View renders the policy editor
 func (e *PolicyEditor) View() string {
-	// If editing a process config, show the process editor
 	if e.editingProcess {
 		var b strings.Builder
 		if e.editingProcessIdx >= 0 {
@@ -2318,7 +2277,6 @@ func (e *PolicyEditor) View() string {
 	return b.String()
 }
 
-// InSubMode returns true if the editor is in a sub-mode (browsing, editing, etc.)
 func (e *PolicyEditor) InSubMode() bool {
 	return e.browsingForLibs || e.browsingForTests ||
 		e.showingExistingLibs || e.showingExistingTests ||
@@ -2440,7 +2398,6 @@ func (e *PolicyEditor) renderFieldCompactWithHint(label, input string, field Pol
 	return b.String()
 }
 
-// Message types for policy editor
 type (
 	policySavedMsg struct {
 		path  string
@@ -2454,7 +2411,6 @@ type (
 	}
 )
 
-// DeletePolicy deletes a policy file
 func DeletePolicy(p *policy.Policy) tea.Cmd {
 	return func() tea.Msg {
 		if err := os.Remove(p.FilePath); err != nil {
