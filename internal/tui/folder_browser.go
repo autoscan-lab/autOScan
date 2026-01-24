@@ -11,15 +11,18 @@ import (
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
 
-// FolderBrowser allows navigating and selecting folders
+// FolderBrowser allows navigating and selecting folders or files
 type FolderBrowser struct {
 	currentPath  string
-	entries      []string // folder names in current directory
+	entries      []string // folder/file names in current directory
+	isDir        []bool   // true if entry is a directory
 	cursor       int
 	scrollOffset int
 	visibleRows  int
 	selected     string
 	err          string
+	fileMode     bool     // when true, shows and allows selecting .c/.h files
+	fileExts     []string // allowed file extensions in file mode
 }
 
 // NewFolderBrowser creates a new folder browser starting at the given path
@@ -43,6 +46,7 @@ func NewFolderBrowser(startPath string) FolderBrowser {
 
 func (fb *FolderBrowser) loadEntries() {
 	fb.entries = nil
+	fb.isDir = nil
 	fb.err = ""
 
 	entries, err := os.ReadDir(fb.currentPath)
@@ -51,21 +55,56 @@ func (fb *FolderBrowser) loadEntries() {
 		return
 	}
 
-	// Filter to directories only, skip hidden
+	// Collect directories first
+	var dirs []string
+	var files []string
+
 	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-			fb.entries = append(fb.entries, e.Name())
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue // Skip hidden
+		}
+
+		if e.IsDir() {
+			dirs = append(dirs, name)
+		} else if fb.fileMode {
+			// In file mode, also include matching files
+			for _, ext := range fb.fileExts {
+				if strings.HasSuffix(strings.ToLower(name), ext) {
+					files = append(files, name)
+					break
+				}
+			}
 		}
 	}
 
-	sort.Slice(fb.entries, func(i, j int) bool {
-		return strings.ToLower(fb.entries[i]) < strings.ToLower(fb.entries[j])
+	// Sort directories and files separately
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.ToLower(dirs[i]) < strings.ToLower(dirs[j])
 	})
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i]) < strings.ToLower(files[j])
+	})
+
+	// Add directories first, then files
+	for _, d := range dirs {
+		fb.entries = append(fb.entries, d)
+		fb.isDir = append(fb.isDir, true)
+	}
+	for _, f := range files {
+		fb.entries = append(fb.entries, f)
+		fb.isDir = append(fb.isDir, false)
+	}
 }
 
 // Update handles keyboard input
 func (fb *FolderBrowser) Update(msg tea.KeyMsg) (selected bool, cmd tea.Cmd) {
-	totalItems := len(fb.entries) + 2 // +2 for ".." and "[Select This Folder]"
+	// Calculate number of fixed items at top
+	fixedItems := 1 // ".." only in file mode
+	if !fb.fileMode {
+		fixedItems = 2 // "[Select This Folder]" and ".."
+	}
+	totalItems := len(fb.entries) + fixedItems
 
 	switch msg.String() {
 	case "j", "down":
@@ -83,24 +122,51 @@ func (fb *FolderBrowser) Update(msg tea.KeyMsg) (selected bool, cmd tea.Cmd) {
 			}
 		}
 	case "enter":
-		if fb.cursor == 0 {
-			// "[Select This Folder]" - select current directory
-			fb.selected = fb.currentPath
-			return true, nil
-		} else if fb.cursor == 1 {
-			// ".." - go up
-			fb.currentPath = filepath.Dir(fb.currentPath)
-			fb.cursor = 0
-			fb.scrollOffset = 0
-			fb.loadEntries()
-		} else {
-			// Enter subfolder
-			idx := fb.cursor - 2
-			if idx < len(fb.entries) {
-				fb.currentPath = filepath.Join(fb.currentPath, fb.entries[idx])
+		if fb.fileMode {
+			// File mode: 0 = "..", rest = entries
+			if fb.cursor == 0 {
+				// ".." - go up
+				fb.currentPath = filepath.Dir(fb.currentPath)
 				fb.cursor = 0
 				fb.scrollOffset = 0
 				fb.loadEntries()
+			} else {
+				idx := fb.cursor - 1
+				if idx < len(fb.entries) {
+					if fb.isDir[idx] {
+						// Enter subfolder
+						fb.currentPath = filepath.Join(fb.currentPath, fb.entries[idx])
+						fb.cursor = 0
+						fb.scrollOffset = 0
+						fb.loadEntries()
+					} else {
+						// Select file
+						fb.selected = filepath.Join(fb.currentPath, fb.entries[idx])
+						return true, nil
+					}
+				}
+			}
+		} else {
+			// Folder mode: 0 = "[Select This Folder]", 1 = "..", rest = entries
+			if fb.cursor == 0 {
+				// "[Select This Folder]" - select current directory
+				fb.selected = fb.currentPath
+				return true, nil
+			} else if fb.cursor == 1 {
+				// ".." - go up
+				fb.currentPath = filepath.Dir(fb.currentPath)
+				fb.cursor = 0
+				fb.scrollOffset = 0
+				fb.loadEntries()
+			} else {
+				// Enter subfolder
+				idx := fb.cursor - 2
+				if idx < len(fb.entries) {
+					fb.currentPath = filepath.Join(fb.currentPath, fb.entries[idx])
+					fb.cursor = 0
+					fb.scrollOffset = 0
+					fb.loadEntries()
+				}
 			}
 		}
 	case "backspace", "h", "left":
@@ -139,9 +205,30 @@ func (fb *FolderBrowser) View() string {
 		return b.String()
 	}
 
-	// Build items list
-	items := []string{"[Select This Folder]", ".."}
-	items = append(items, fb.entries...)
+	// Build items list based on mode
+	type item struct {
+		name  string
+		icon  string
+		isDir bool
+	}
+	var items []item
+
+	if fb.fileMode {
+		// File mode: ".." + entries
+		items = append(items, item{name: "..", icon: "^ ", isDir: true})
+	} else {
+		// Folder mode: "[Select This Folder]" + ".." + entries
+		items = append(items, item{name: "[Select This Folder]", icon: "* ", isDir: true})
+		items = append(items, item{name: "..", icon: "^ ", isDir: true})
+	}
+
+	for i, name := range fb.entries {
+		icon := "/ " // Folder
+		if !fb.isDir[i] {
+			icon = "# " // File
+		}
+		items = append(items, item{name: name, icon: icon, isDir: fb.isDir[i]})
+	}
 
 	if len(items) == 0 {
 		b.WriteString(styles.Subtle.Render("  (empty directory)"))
@@ -160,22 +247,19 @@ func (fb *FolderBrowser) View() string {
 			cursor = "> "
 		}
 
-		name := items[i]
-		icon := ""
-		if i == 0 {
-			icon = "* " // Select current
-		} else if i == 1 {
-			icon = "^ " // Parent
-		} else {
-			icon = "/ " // Folder
-		}
-
+		it := items[i]
 		nameStyle := styles.NormalItem
 		if i == fb.cursor {
 			nameStyle = styles.SelectedItem
 		}
 
-		line := cursor + icon + nameStyle.Render(name)
+		// Use different color for files vs folders
+		iconStyle := styles.Subtle
+		if !it.isDir {
+			iconStyle = styles.SuccessText
+		}
+
+		line := cursor + iconStyle.Render(it.icon) + nameStyle.Render(it.name)
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -205,5 +289,26 @@ func (fb *FolderBrowser) Reset(startPath string) {
 	fb.scrollOffset = 0
 	fb.selected = ""
 	fb.err = ""
+	fb.fileMode = false
+	fb.fileExts = nil
 	fb.loadEntries()
+}
+
+// SetFileMode enables file selection mode with specified extensions
+func (fb *FolderBrowser) SetFileMode(enabled bool) {
+	fb.fileMode = enabled
+	if enabled {
+		fb.fileExts = []string{".c", ".h"} // Default to C source files
+	} else {
+		fb.fileExts = nil
+	}
+	fb.loadEntries()
+}
+
+// SetFileExtensions sets allowed file extensions for file mode
+func (fb *FolderBrowser) SetFileExtensions(exts []string) {
+	fb.fileExts = exts
+	if fb.fileMode {
+		fb.loadEntries()
+	}
 }

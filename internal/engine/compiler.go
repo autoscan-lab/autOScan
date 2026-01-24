@@ -174,8 +174,32 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		sourceFiles[i] = filepath.Join(sub.Path, f)
 	}
 
+	// Resolve library files from the bundled libraries directory
+	var libraryFiles []string
+	if len(e.policy.LibraryFiles) > 0 {
+		// Get libraries directory
+		home, _ := os.UserHomeDir()
+		libDir := filepath.Join(home, ".config", "autoscan", "libraries")
+
+		for _, libFile := range e.policy.LibraryFiles {
+			// If it's just a filename, resolve from libraries dir
+			// If it's an absolute path, use as-is (backward compatibility)
+			var fullPath string
+			if filepath.IsAbs(libFile) {
+				fullPath = libFile
+			} else {
+				fullPath = filepath.Join(libDir, libFile)
+			}
+
+			// Only include if file exists
+			if _, err := os.Stat(fullPath); err == nil {
+				libraryFiles = append(libraryFiles, fullPath)
+			}
+		}
+	}
+
 	// Build gcc arguments
-	args := e.policy.BuildGCCArgs(sourceFiles, outputPath)
+	args := e.policy.BuildGCCArgs(sourceFiles, libraryFiles, outputPath)
 
 	// Create command with timeout context
 	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)

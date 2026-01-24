@@ -28,6 +28,10 @@ type Policy struct {
 	// RequiredFiles lists source files that must be present (e.g., ["S0.c", "S1.c"])
 	RequiredFiles []string `yaml:"required_files"`
 
+	// LibraryFiles lists additional source files to compile with each submission
+	// These are typically instructor-provided library files (e.g., ["lib/utils.c"])
+	LibraryFiles []string `yaml:"library_files"`
+
 	// Report configures export options
 	Report ReportConfig `yaml:"report"`
 
@@ -155,7 +159,8 @@ func (p *Policy) BannedSet() map[string]struct{} {
 }
 
 // BuildGCCArgs constructs the gcc command arguments for a list of source files.
-func (p *Policy) BuildGCCArgs(sourceFiles []string, outputPath string) []string {
+// libraryFiles are additional source files (with full paths) to compile with the submission.
+func (p *Policy) BuildGCCArgs(sourceFiles []string, libraryFiles []string, outputPath string) []string {
 	args := []string{}
 
 	// Add all flags (compiler + linker combined)
@@ -163,6 +168,9 @@ func (p *Policy) BuildGCCArgs(sourceFiles []string, outputPath string) []string 
 
 	// Add source files
 	args = append(args, sourceFiles...)
+
+	// Add library files (instructor-provided code)
+	args = append(args, libraryFiles...)
 
 	// Add output
 	args = append(args, "-o", outputPath)

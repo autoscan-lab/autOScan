@@ -134,11 +134,31 @@ func (e *DiscoveryEngine) checkLeafFolder(dir string) (bool, []string, error) {
 }
 
 // DiscoverQuick returns just the count of submissions without full details.
-// Useful for progress display.
+// Useful for progress display. More efficient than Discover() for counting only.
 func (e *DiscoveryEngine) DiscoverQuick(root string) (int, error) {
-	subs, err := e.Discover(root)
+	count := 0
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return 0, err
 	}
-	return len(subs), nil
+
+	err = filepath.WalkDir(absRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return err
+		}
+		if strings.HasPrefix(d.Name(), ".") && path != absRoot {
+			return filepath.SkipDir
+		}
+
+		isLeaf, cFiles, err := e.checkLeafFolder(path)
+		if err != nil {
+			return err
+		}
+		if isLeaf && len(cFiles) >= e.policy.Discover.MinCFiles {
+			count++
+		}
+		return nil
+	})
+
+	return count, err
 }

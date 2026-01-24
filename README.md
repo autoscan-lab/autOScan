@@ -85,6 +85,7 @@ On first run, configs are created at `~/.config/autoscan/`:
 ~/.config/autoscan/
 ├── policies/        # Policy YAML files
 │   └── example.yaml
+├── libraries/       # Bundled library files (.c/.h)
 ├── banned.yaml      # Global banned functions
 └── settings.yaml    # User preferences
 ```
@@ -98,7 +99,18 @@ compile:
   flags: ["-Wall", "-Wextra", "-lpthread"]
   output: "lab03"
 required_files: [S0.c, S1.c]
+library_files:
+  - /path/to/lib/utils.c
+  - /path/to/lib/helper.h
 ```
+
+### Library Files
+
+Library files are additional source files that get compiled with each student submission. This is useful for shared header files or instructor-provided utilities.
+
+When you add a library file, it is **copied** to `~/.config/autoscan/libraries/` so it stays bundled with autoscan. You can run autoscan from anywhere and the library files will be available.
+
+Add library files via the policy editor (Manage Policies → select policy → Library Files section) using the file browser.
 
 ### Banned Functions
 

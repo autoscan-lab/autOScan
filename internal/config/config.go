@@ -57,6 +57,27 @@ func BannedFile() (string, error) {
 	return filepath.Join(dir, "banned.yaml"), nil
 }
 
+// LibrariesDir returns the libraries directory path for bundled library files
+func LibrariesDir() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "libraries"), nil
+}
+
+// EnsureLibrariesDir creates the libraries directory if it doesn't exist
+func EnsureLibrariesDir() (string, error) {
+	libDir, err := LibrariesDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(libDir, 0755); err != nil {
+		return "", err
+	}
+	return libDir, nil
+}
+
 // SettingsFile returns the settings.yaml file path
 func SettingsFile() (string, error) {
 	dir, err := Dir()

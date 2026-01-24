@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/felipetrejos/autoscan/internal/domain"
 	"github.com/felipetrejos/autoscan/internal/policy"
@@ -52,19 +54,90 @@ func (e *ScanEngine) Scan(sub domain.Submission) domain.ScanResult {
 	return domain.NewScanResult(allHits, parseErrors)
 }
 
-// ScanAll scans all submissions.
+// ScanAll scans all submissions in parallel.
 func (e *ScanEngine) ScanAll(submissions []domain.Submission, onComplete func(domain.Submission, domain.ScanResult)) []domain.ScanResult {
 	results := make([]domain.ScanResult, len(submissions))
 
-	for i, sub := range submissions {
-		result := e.Scan(sub)
-		results[i] = result
-		if onComplete != nil {
-			onComplete(sub, result)
-		}
+	// Use worker pool for parallel scanning
+	numWorkers := runtime.NumCPU()
+	if numWorkers > len(submissions) {
+		numWorkers = len(submissions)
+	}
+	if numWorkers == 0 {
+		return results
 	}
 
+	jobs := make(chan int, len(submissions))
+	for i := range submissions {
+		jobs <- i
+	}
+	close(jobs)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Create a parser per worker (tree-sitter parsers aren't thread-safe)
+			parser := sitter.NewParser()
+			parser.SetLanguage(e.lang)
+
+			for idx := range jobs {
+				sub := submissions[idx]
+				result := e.scanWithParser(parser, sub)
+
+				mu.Lock()
+				results[idx] = result
+				mu.Unlock()
+
+				if onComplete != nil {
+					onComplete(sub, result)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 	return results
+}
+
+// scanWithParser scans a submission using the provided parser.
+func (e *ScanEngine) scanWithParser(parser *sitter.Parser, sub domain.Submission) domain.ScanResult {
+	var allHits []domain.BannedHit
+	var parseErrors []string
+
+	for _, cFile := range sub.CFiles {
+		filePath := filepath.Join(sub.Path, cFile)
+		hits, err := e.scanFileWithParser(parser, filePath, cFile)
+		if err != nil {
+			parseErrors = append(parseErrors, cFile+": "+err.Error())
+			continue
+		}
+		allHits = append(allHits, hits...)
+	}
+
+	return domain.NewScanResult(allHits, parseErrors)
+}
+
+func (e *ScanEngine) scanFileWithParser(parser *sitter.Parser, filePath, displayName string) ([]domain.BannedHit, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := parser.ParseCtx(context.Background(), nil, content)
+	if err != nil {
+		return nil, err
+	}
+	defer tree.Close()
+
+	var hits []domain.BannedHit
+	lines := strings.Split(string(content), "\n")
+	e.walkTree(tree.RootNode(), content, lines, displayName, &hits)
+
+	return hits, nil
 }
 
 func (e *ScanEngine) scanFile(filePath, displayName string) ([]domain.BannedHit, error) {
