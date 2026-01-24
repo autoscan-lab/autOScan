@@ -541,13 +541,88 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Get test case count for navigation
+	// Check if multi-process mode is enabled
+	isMultiProcess := false
+	var mp *policy.MultiProcessConfig
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		mp = m.policies[m.selectedPolicy].Run.MultiProcess
+		if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
+			isMultiProcess = true
+		}
+	}
+
+	if isMultiProcess {
+		// ══════════════════════════════════════════════════════════════════════
+		// MULTI-PROCESS MODE NAVIGATION
+		// Focus: 0=Run with defaults, 1+=Test scenarios
+		// ══════════════════════════════════════════════════════════════════════
+		scenarioCount := len(mp.TestScenarios)
+		maxFocus := scenarioCount // 0=defaults, 1..N=scenarios
+
+		switch msg.String() {
+		case "tab":
+			m.detailsTab = 0
+			m.detailScroll = 0
+			return m, nil
+
+		case "shift+tab":
+			m.detailsTab = 2
+			m.detailScroll = 0
+			return m, nil
+
+		case "down", "j":
+			if m.runInputFocused < maxFocus {
+				m.runInputFocused++
+			}
+			return m, nil
+
+		case "up", "k":
+			if m.runInputFocused > 0 {
+				m.runInputFocused--
+			}
+			return m, nil
+
+		case "enter":
+			if m.runInputFocused == 0 {
+				// Run with default args
+				return m, m.executeMultiProcess()
+			} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
+				// Run specific test scenario
+				return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
+			}
+
+		case "m":
+			// Quick run with defaults
+			return m, m.executeMultiProcess()
+
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// Run specific test scenario by number
+			idx := int(msg.String()[0] - '1')
+			if idx >= 0 && idx < scenarioCount {
+				return m, m.executeMultiProcessScenario(idx)
+			}
+
+		case "esc", "q":
+			m.currentView = ViewSubmissions
+			m.expandedFuncs = nil
+			m.multiProcessResult = nil
+			m.showMultiProcess = false
+			return m, nil
+		}
+
+		return m, nil
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// SINGLE-PROCESS MODE NAVIGATION
+	// Focus: 0=args, 1=stdin, 2=run button, 3+=test cases
+	// ══════════════════════════════════════════════════════════════════════════
+
 	testCaseCount := 0
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
 	}
 
-	// Max focus: 0=args, 1=stdin, 2=run button, 3+=test cases
 	maxFocus := 2
 	if testCaseCount > 0 {
 		maxFocus = 2 + testCaseCount
@@ -555,7 +630,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "tab":
-		// Switch to next details tab
 		m.detailsTab = 0
 		m.detailScroll = 0
 		m.runArgsInput.Blur()
@@ -563,7 +637,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "shift+tab":
-		// Switch to previous details tab
 		m.detailsTab = 2
 		m.detailScroll = 0
 		m.runArgsInput.Blur()
@@ -574,7 +647,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.runInputFocused < maxFocus {
 			m.runInputFocused++
 		}
-		// Update focus states
 		m.runArgsInput.Blur()
 		m.runStdinInput.Blur()
 		if m.runInputFocused == 0 {
@@ -599,45 +671,20 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if m.runInputFocused == 2 {
-			// Run with custom args
 			return m, m.executeSubmission()
 		} else if m.runInputFocused > 2 {
-			// Run specific test case
 			testIdx := m.runInputFocused - 3
 			return m, m.executeTestCase(testIdx)
 		}
 
 	case "r":
-		// Quick run with current args
 		if m.runInputFocused >= 2 {
 			return m, m.executeSubmission()
 		}
 
 	case "t":
-		// Run all test cases
 		if testCaseCount > 0 {
 			return m, m.executeAllTestCases()
-		}
-
-	case "m":
-		// Run multi-process mode if configured
-		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-			if m.policies[m.selectedPolicy].Run.MultiProcess != nil &&
-				m.policies[m.selectedPolicy].Run.MultiProcess.Enabled {
-				return m, m.executeMultiProcess()
-			}
-		}
-
-	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		// Run specific test scenario by number
-		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-			mp := m.policies[m.selectedPolicy].Run.MultiProcess
-			if mp != nil && mp.Enabled && len(mp.TestScenarios) > 0 {
-				idx := int(msg.String()[0] - '1') // "1" -> 0, "2" -> 1, etc.
-				if idx >= 0 && idx < len(mp.TestScenarios) {
-					return m, m.executeMultiProcessScenario(idx)
-				}
-			}
 		}
 
 	case "esc", "q":
@@ -650,7 +697,7 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle text input
+	// Handle text input (only in single-process mode)
 	var cmd tea.Cmd
 	if m.runInputFocused == 0 {
 		m.runArgsInput, cmd = m.runArgsInput.Update(msg)
@@ -795,6 +842,7 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries
+	shortNames := m.settings.ShortNames
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -809,6 +857,9 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 					opts = append(opts, engine.WithOutputDir(binDir))
 				}
 			}
+
+			// Pass short names setting to compiler
+			opts = append(opts, engine.WithShortNames(shortNames))
 
 			runner, err := engine.NewRunner(selectedPolicy, opts...)
 			if err != nil {
@@ -935,7 +986,7 @@ func (m *Model) getExecutor() *engine.Executor {
 		return nil
 	}
 
-	m.executor = engine.NewExecutor(m.policies[m.selectedPolicy], binDir)
+	m.executor = engine.NewExecutorWithOptions(m.policies[m.selectedPolicy], binDir, m.settings.ShortNames)
 	return m.executor
 }
 

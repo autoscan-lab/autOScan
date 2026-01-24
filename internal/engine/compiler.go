@@ -26,11 +26,12 @@ const (
 
 // CompileEngine handles parallel compilation of submissions.
 type CompileEngine struct {
-	policy    *policy.Policy
-	timeout   time.Duration
-	workers   int
-	tempDir   string
-	outputDir string // If set, binaries are saved here instead of tempDir
+	policy     *policy.Policy
+	timeout    time.Duration
+	workers    int
+	tempDir    string
+	outputDir  string // If set, binaries are saved here instead of tempDir
+	shortNames bool   // If true, truncate folder names at first underscore
 }
 
 // CompileOption configures the compile engine.
@@ -55,6 +56,13 @@ func WithWorkers(n int) CompileOption {
 func WithOutputDir(dir string) CompileOption {
 	return func(e *CompileEngine) {
 		e.outputDir = dir
+	}
+}
+
+// WithShortNames enables truncation of folder names at first underscore.
+func WithShortNames(enabled bool) CompileOption {
+	return func(e *CompileEngine) {
+		e.shortNames = enabled
 	}
 }
 
@@ -150,8 +158,16 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		baseDir = e.outputDir
 	}
 
+	// Determine output directory name (optionally truncated)
+	dirName := sub.ID
+	if e.shortNames {
+		if idx := strings.Index(dirName, "_"); idx > 0 {
+			dirName = dirName[:idx]
+		}
+	}
+
 	// Create output directory
-	outputDir := filepath.Join(baseDir, sub.ID)
+	outputDir := filepath.Join(baseDir, dirName)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return domain.NewCompileResult(
 			false,

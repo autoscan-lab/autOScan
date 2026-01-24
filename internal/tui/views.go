@@ -40,11 +40,16 @@ func (m Model) View() string {
 	case ViewPolicyManage:
 		content = m.renderPolicyManage()
 	case ViewPolicyEditor:
-		content = m.policyEditor.View() + "\n\n" + components.RenderHelpBar([]components.HelpItem{
-			{Key: "tab", Desc: "next field"},
-			{Key: "↑↓", Desc: "navigate"},
-			{Key: "esc", Desc: "cancel"},
-		})
+		// Only add help bar if NOT in a sub-mode (sub-modes render their own hints)
+		if m.policyEditor.InSubMode() {
+			content = m.policyEditor.View()
+		} else {
+			content = m.policyEditor.View() + "\n\n" + components.RenderHelpBar([]components.HelpItem{
+				{Key: "tab", Desc: "next field"},
+				{Key: "↑↓", Desc: "navigate"},
+				{Key: "esc", Desc: "cancel"},
+			})
+		}
 	case ViewBannedEditor:
 		content = m.renderBannedEditor()
 	case ViewSettings:
@@ -870,23 +875,29 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	}
 	b.WriteString("\n\n")
 
-	// Command - no truncation, allow wrapping
+	// Command - truncate paths to filenames for readability
 	b.WriteString(styles.SubtleText.Render("Command:"))
 	b.WriteString("\n")
 	if len(r.Compile.Command) > 0 {
-		cmd := strings.Join(r.Compile.Command, " ")
-		// Wrap command if needed (use lipgloss for proper wrapping)
+		// Truncate paths in command to just filenames
+		var truncatedCmd []string
+		for _, arg := range r.Compile.Command {
+			truncatedCmd = append(truncatedCmd, truncatePathToFilename(arg))
+		}
+		cmd := strings.Join(truncatedCmd, " ")
 		cmdStyle := lipgloss.NewStyle().Width(availableWidth)
 		b.WriteString(cmdStyle.Render(cmd))
 		b.WriteString("\n")
 	}
 
-	// Output/Error - no truncation, allow wrapping and scrolling
+	// Output/Error - truncate paths for readability
 	if r.Compile.Stderr != "" {
 		b.WriteString("\n")
 		b.WriteString(styles.SubtleText.Render("Output:"))
 		b.WriteString("\n")
-		lines := strings.Split(r.Compile.Stderr, "\n")
+		// Truncate paths in stderr output
+		truncatedStderr := truncatePathsInText(r.Compile.Stderr)
+		lines := strings.Split(truncatedStderr, "\n")
 		start := m.detailScroll
 		// Show more lines now that we have responsive width
 		visibleLines := (m.height - 20) // Leave room for header, tabs, hints
@@ -916,6 +927,61 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	}
 
 	return b.String()
+}
+
+// truncatePathToFilename extracts just the filename from a path if it looks like a path
+func truncatePathToFilename(s string) string {
+	// If it contains a path separator and looks like a file path
+	if strings.Contains(s, "/") && !strings.HasPrefix(s, "-") {
+		return filepath.Base(s)
+	}
+	return s
+}
+
+// truncatePathsInText replaces absolute paths with just filenames in compiler output
+func truncatePathsInText(text string) string {
+	// Match patterns like /path/to/file.c:line:col or /path/to/file.c
+	// This regex finds absolute paths and replaces them with just the filename
+	result := text
+	
+	// Split by common path delimiters and rebuild
+	parts := strings.Split(result, "/")
+	if len(parts) > 1 {
+		// Find path-like sequences and truncate them
+		// Look for patterns: /Users/... or /home/... etc followed by filename
+		result = truncateAbsolutePaths(result)
+	}
+	
+	return result
+}
+
+// truncateAbsolutePaths finds and truncates absolute paths in text
+func truncateAbsolutePaths(text string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(text) {
+		// Look for start of absolute path
+		if text[i] == '/' && i+1 < len(text) && (text[i+1] == 'U' || text[i+1] == 'h' || text[i+1] == 'v' || text[i+1] == 't') {
+			// Might be /Users, /home, /var, /tmp etc - find the end of the path
+			pathEnd := i + 1
+			for pathEnd < len(text) && text[pathEnd] != ' ' && text[pathEnd] != ':' && text[pathEnd] != '\n' && text[pathEnd] != ')' && text[pathEnd] != '(' {
+				pathEnd++
+			}
+			if pathEnd > i+1 {
+				pathStr := text[i:pathEnd]
+				// Only truncate if it looks like a real file path (contains multiple /)
+				if strings.Count(pathStr, "/") > 2 {
+					filename := filepath.Base(pathStr)
+					result.WriteString(filename)
+					i = pathEnd
+					continue
+				}
+			}
+		}
+		result.WriteByte(text[i])
+		i++
+	}
+	return result.String()
 }
 
 func (m Model) renderBannedTab(r domain.SubmissionResult) string {
@@ -1041,150 +1107,180 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		return b.String()
 	}
 
-	// Custom execution section
-	b.WriteString(styles.Subtle.Render("Custom Execution"))
-	b.WriteString("\n\n")
-
-	// Arguments input
-	argsLabel := "  Arguments: "
-	if m.runInputFocused == 0 {
-		argsLabel = styles.Highlight.Render("> ") + "Arguments: "
-	}
-	b.WriteString(argsLabel)
-	b.WriteString(m.runArgsInput.View())
-	b.WriteString("\n")
-
-	// Stdin input
-	stdinLabel := "  Stdin:     "
-	if m.runInputFocused == 1 {
-		stdinLabel = styles.Highlight.Render("> ") + "Stdin:     "
-	}
-	b.WriteString(stdinLabel)
-	b.WriteString(m.runStdinInput.View())
-	b.WriteString("\n\n")
-
-	// Run button
-	if m.runInputFocused == 2 {
-		b.WriteString(styles.Highlight.Render("> "))
-		b.WriteString(styles.SelectedItem.Render("[ Run ]"))
-	} else {
-		b.WriteString("  ")
-		b.WriteString(styles.SubtleText.Render("[ Run ]"))
-	}
-	b.WriteString("\n")
-
-	// Test cases section (if any defined in policy)
-	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-		testCases := m.policies[m.selectedPolicy].Run.TestCases
-		if len(testCases) > 0 {
-			b.WriteString("\n")
-			b.WriteString(styles.Subtle.Render("Preset Test Cases"))
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(testCases))))
-			b.WriteString("\n\n")
-
-			for i, tc := range testCases {
-				cursor := "  "
-				style := styles.NormalItem
-				if m.runInputFocused == 3+i {
-					cursor = styles.Highlight.Render("> ")
-					style = styles.SelectedItem
-				}
-
-				name := tc.Name
-				if name == "" {
-					name = fmt.Sprintf("Test %d", i+1)
-				}
-
-				// Show args if present
-				argsInfo := ""
-				if len(tc.Args) > 0 {
-					argsInfo = fmt.Sprintf(" [%s]", strings.Join(tc.Args, " "))
-				}
-
-				b.WriteString(fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), styles.SubtleText.Render(argsInfo)))
-			}
-		}
-	}
-
-	// Show last result if available
-	if m.runResult != nil {
-		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("─── Last Result ───"))
-		b.WriteString("\n\n")
-		b.WriteString(m.renderExecuteResult(*m.runResult))
-	}
-
-	// Show test results if available
-	if len(m.runTestResults) > 0 {
-		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("─── Test Results ───"))
-		b.WriteString("\n\n")
-
-		passed := 0
-		for _, tr := range m.runTestResults {
-			if tr.Passed {
-				passed++
-			}
-		}
-
-		// Summary
-		if passed == len(m.runTestResults) {
-			b.WriteString(styles.SuccessText.Render(fmt.Sprintf("All %d tests passed!", passed)))
-		} else {
-			b.WriteString(styles.WarningText.Render(fmt.Sprintf("%d/%d tests passed", passed, len(m.runTestResults))))
-		}
-		b.WriteString("\n\n")
-
-		// Individual results
-		for _, tr := range m.runTestResults {
-			name := tr.TestCaseName
-			if name == "" {
-				name = "Test"
-			}
-			if tr.Passed {
-				b.WriteString(styles.SuccessText.Render(fmt.Sprintf("  [PASS] %s", name)))
-			} else {
-				b.WriteString(styles.ErrorText.Render(fmt.Sprintf("  [FAIL] %s", name)))
-			}
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (exit %d, %dms)", tr.ExitCode, tr.Duration.Milliseconds())))
-			b.WriteString("\n")
-		}
-	}
-
-	// Multi-process section if configured
+	// Check if multi-process mode is enabled
+	isMultiProcess := false
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		mp := m.policies[m.selectedPolicy].Run.MultiProcess
 		if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-			b.WriteString("\n")
-			b.WriteString(styles.Subtle.Render("Multi-Process Mode"))
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d processes)", len(mp.Executables))))
-			b.WriteString("\n")
+			isMultiProcess = true
+		}
+	}
 
-			// List the configured processes
-			for _, proc := range mp.Executables {
-				b.WriteString(fmt.Sprintf("  • %s (%s)\n", proc.Name, proc.SourceFile))
+	if isMultiProcess {
+		// ══════════════════════════════════════════════════════════════════════
+		// MULTI-PROCESS MODE - Only show multi-process execution options
+		// ══════════════════════════════════════════════════════════════════════
+		mp := m.policies[m.selectedPolicy].Run.MultiProcess
+
+		b.WriteString(styles.Subtle.Render("Multi-Process Mode"))
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d processes)", len(mp.Executables))))
+		b.WriteString("\n\n")
+
+		// List the configured processes
+		for _, proc := range mp.Executables {
+			b.WriteString(fmt.Sprintf("  • %s (%s)", proc.Name, proc.SourceFile))
+			if proc.StartDelayMs > 0 {
+				b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [delay: %dms]", proc.StartDelayMs)))
 			}
-
-			// Default run option
 			b.WriteString("\n")
-			b.WriteString(styles.SubtleText.Render("  [m] Run with default args\n"))
+		}
 
-			// Show test scenarios if available
-			if len(mp.TestScenarios) > 0 {
-				b.WriteString("\n")
-				b.WriteString(styles.Subtle.Render("Test Scenarios"))
-				b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(mp.TestScenarios))))
-				b.WriteString("\n")
+		// Run with defaults option (navigable)
+		b.WriteString("\n")
+		if m.runInputFocused == 0 {
+			b.WriteString(styles.Highlight.Render("> "))
+			b.WriteString(styles.SelectedItem.Render("[ Run ]"))
+		} else {
+			b.WriteString("  ")
+			b.WriteString(styles.NormalItem.Render("[ Run ]"))
+		}
+		b.WriteString("\n")
 
-				for i, scenario := range mp.TestScenarios {
-					b.WriteString(fmt.Sprintf("  [%d] %s\n", i+1, scenario.Name))
+		// Show test scenarios if available (navigable)
+		if len(mp.TestScenarios) > 0 {
+			b.WriteString("\n")
+			b.WriteString(styles.Subtle.Render("Test Scenarios"))
+			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(mp.TestScenarios))))
+			b.WriteString("\n\n")
+
+			for i, scenario := range mp.TestScenarios {
+				cursor := "  "
+				style := styles.NormalItem
+				if m.runInputFocused == 1+i {
+					cursor = styles.Highlight.Render("> ")
+					style = styles.SelectedItem
+				}
+				b.WriteString(fmt.Sprintf("%s%s\n", cursor, style.Render(scenario.Name)))
+			}
+		}
+
+		// Show multi-process results if available
+		if m.showMultiProcess && m.multiProcessResult != nil {
+			b.WriteString("\n")
+			b.WriteString(m.renderMultiProcessGrid())
+		}
+	} else {
+		// ══════════════════════════════════════════════════════════════════════
+		// SINGLE-PROCESS MODE - Show custom execution and test cases
+		// ══════════════════════════════════════════════════════════════════════
+
+		// Custom execution section
+		b.WriteString(styles.Subtle.Render("Custom Execution"))
+		b.WriteString("\n\n")
+
+		// Arguments input
+		argsLabel := "  Arguments: "
+		if m.runInputFocused == 0 {
+			argsLabel = styles.Highlight.Render("> ") + "Arguments: "
+		}
+		b.WriteString(argsLabel)
+		b.WriteString(m.runArgsInput.View())
+		b.WriteString("\n")
+
+		// Stdin input
+		stdinLabel := "  Stdin:     "
+		if m.runInputFocused == 1 {
+			stdinLabel = styles.Highlight.Render("> ") + "Stdin:     "
+		}
+		b.WriteString(stdinLabel)
+		b.WriteString(m.runStdinInput.View())
+		b.WriteString("\n\n")
+
+		// Run button
+		if m.runInputFocused == 2 {
+			b.WriteString(styles.Highlight.Render("> "))
+			b.WriteString(styles.SelectedItem.Render("[ Run ]"))
+		} else {
+			b.WriteString("  ")
+			b.WriteString(styles.SubtleText.Render("[ Run ]"))
+		}
+		b.WriteString("\n")
+
+		// Test cases section (if any defined in policy)
+		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+			testCases := m.policies[m.selectedPolicy].Run.TestCases
+			if len(testCases) > 0 {
+				b.WriteString("\n")
+				b.WriteString(styles.Subtle.Render("Preset Test Cases"))
+				b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(testCases))))
+				b.WriteString("\n\n")
+
+				for i, tc := range testCases {
+					cursor := "  "
+					style := styles.NormalItem
+					if m.runInputFocused == 3+i {
+						cursor = styles.Highlight.Render("> ")
+						style = styles.SelectedItem
+					}
+
+					name := tc.Name
+					if name == "" {
+						name = fmt.Sprintf("Test %d", i+1)
+					}
+
+					// Show args if present
+					argsInfo := ""
+					if len(tc.Args) > 0 {
+						argsInfo = fmt.Sprintf(" [%s]", strings.Join(tc.Args, " "))
+					}
+
+					b.WriteString(fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), styles.SubtleText.Render(argsInfo)))
+				}
+			}
+		}
+
+		// Show last result if available
+		if m.runResult != nil {
+			b.WriteString("\n")
+			b.WriteString(styles.Subtle.Render("─── Last Result ───"))
+			b.WriteString("\n\n")
+			b.WriteString(m.renderExecuteResult(*m.runResult))
+		}
+
+		// Show test results if available
+		if len(m.runTestResults) > 0 {
+			b.WriteString("\n")
+			b.WriteString(styles.Subtle.Render("─── Test Results ───"))
+			b.WriteString("\n\n")
+
+			passed := 0
+			for _, tr := range m.runTestResults {
+				if tr.Passed {
+					passed++
 				}
 			}
 
-			// Show multi-process results if available
-			if m.showMultiProcess && m.multiProcessResult != nil {
+			// Summary
+			if passed == len(m.runTestResults) {
+				b.WriteString(styles.SuccessText.Render(fmt.Sprintf("All %d tests passed!", passed)))
+			} else {
+				b.WriteString(styles.WarningText.Render(fmt.Sprintf("%d/%d tests passed", passed, len(m.runTestResults))))
+			}
+			b.WriteString("\n\n")
+
+			// Individual results
+			for _, tr := range m.runTestResults {
+				name := tr.TestCaseName
+				if name == "" {
+					name = "Test"
+				}
+				if tr.Passed {
+					b.WriteString(styles.SuccessText.Render(fmt.Sprintf("  [PASS] %s", name)))
+				} else {
+					b.WriteString(styles.ErrorText.Render(fmt.Sprintf("  [FAIL] %s", name)))
+				}
+				b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (exit %d, %dms)", tr.ExitCode, tr.Duration.Milliseconds())))
 				b.WriteString("\n")
-				b.WriteString(m.renderMultiProcessGrid())
 			}
 		}
 	}
@@ -1218,57 +1314,75 @@ func (m Model) renderMultiProcessGrid() string {
 	}
 	b.WriteString("\n\n")
 
-	// Create grid layout (2 columns) - responsive
+	// Create grid layout - responsive (2 columns or 1 column)
 	processes := m.multiProcessResult.Order
 	numProcs := len(processes)
 
-	// Calculate column width based on terminal width
-	// Use full width minus padding, divide by 2 for columns, leave gap
-	availableWidth := m.width - 8
-	if availableWidth < 80 {
-		availableWidth = 80
-	}
-	colWidth := (availableWidth - 4) / 2 // Two columns with gap
-	if colWidth < 40 {
-		colWidth = 40 // Minimum column width
-	}
-	if colWidth > 100 {
-		colWidth = 100 // Maximum column width for readability
+	// Calculate available width - the content box has:
+	// - Width(m.width - 8) which is TOTAL width including border and padding
+	// - Border takes 2 chars (1 each side)
+	// - Padding(1, 2) takes 4 chars (2 each side)
+	// So actual content area = (m.width - 8) - 2 - 4 = m.width - 14
+	availableWidth := m.width - 14
+	if availableWidth < 40 {
+		availableWidth = 40
 	}
 
-	// Build rows (2 per row)
-	for i := 0; i < numProcs; i += 2 {
-		row := m.renderProcessRow(processes, i, colWidth)
-		b.WriteString(row)
-		b.WriteString("\n")
+	// Determine if we use 1 or 2 columns based on available width
+	// Minimum column width is 38 (for readable content)
+	minColWidth := 38
+	useTwoColumns := availableWidth >= (minColWidth*2 + 4) // 4 for gap between columns
+
+	if useTwoColumns {
+		// Two column layout - split available width between columns with gap
+		colWidth := (availableWidth - 4) / 2 // Subtract gap (4 chars for safety)
+
+		for i := 0; i < numProcs; i += 2 {
+			row := m.renderProcessRow(processes, i, colWidth, true)
+			b.WriteString(row)
+			if i+2 < numProcs {
+				b.WriteString("\n")
+			}
+		}
+	} else {
+		// Single column layout - use full width
+		colWidth := availableWidth
+
+		for i := 0; i < numProcs; i++ {
+			procName := processes[i]
+			proc := m.multiProcessResult.Processes[procName]
+			b.WriteString(m.renderProcessBox(proc, colWidth))
+			if i < numProcs-1 {
+				b.WriteString("\n")
+			}
+		}
 	}
 
 	return b.String()
 }
 
-func (m Model) renderProcessRow(processes []string, startIdx, colWidth int) string {
-	var boxes []string
-
-	for i := 0; i < 2; i++ {
-		idx := startIdx + i
-		if idx >= len(processes) {
-			// Empty column - create empty box with same width
-			emptyBox := lipgloss.NewStyle().
-				Width(colWidth).
-				Height(8).
-				Render("")
-			boxes = append(boxes, emptyBox)
-			continue
-		}
-
-		procName := processes[idx]
-		proc := m.multiProcessResult.Processes[procName]
-		boxes = append(boxes, m.renderProcessBox(proc, colWidth))
+func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoCol bool) string {
+	if !twoCol || startIdx >= len(processes) {
+		return ""
 	}
 
-	// Use lipgloss.JoinHorizontal to properly join boxes with spacing
-	// This handles ANSI codes correctly and prevents overlap
-	return lipgloss.JoinHorizontal(lipgloss.Top, boxes[0], "  ", boxes[1])
+	// First box
+	procName := processes[startIdx]
+	proc := m.multiProcessResult.Processes[procName]
+	box1 := m.renderProcessBox(proc, colWidth)
+
+	// Second box (if exists)
+	if startIdx+1 >= len(processes) {
+		// Only one process - just return it
+		return box1
+	}
+
+	procName2 := processes[startIdx+1]
+	proc2 := m.multiProcessResult.Processes[procName2]
+	box2 := m.renderProcessBox(proc2, colWidth)
+
+	// Join horizontally with a gap
+	return lipgloss.JoinHorizontal(lipgloss.Top, box1, "  ", box2)
 }
 
 func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
@@ -1282,20 +1396,28 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 		}
 	}
 
-	// Box width should match the column width exactly
-	// The border and padding are handled by lipgloss internally
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(width).
-		MaxHeight(8)
+	// Content width is box width minus border (2) and padding (2)
+	contentWidth := width - 4
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
 
 	var content strings.Builder
 
-	// Header with name and status
-	content.WriteString(styles.Subtle.Render(proc.Name))
-	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
+	// Header with name and status - truncate if needed
+	header := proc.Name
+	sourceInfo := fmt.Sprintf(" (%s)", proc.SourceFile)
+	if len(header)+len(sourceInfo) > contentWidth {
+		// Truncate source file name
+		maxSource := contentWidth - len(header) - 5
+		if maxSource > 3 {
+			sourceInfo = fmt.Sprintf(" (%s...)", proc.SourceFile[:maxSource])
+		} else {
+			sourceInfo = ""
+		}
+	}
+	content.WriteString(styles.Subtle.Render(header))
+	content.WriteString(styles.SubtleText.Render(sourceInfo))
 	content.WriteString("\n")
 
 	// Status line with pass/fail indication
@@ -1315,14 +1437,14 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	content.WriteString("\n")
 
-	// Output preview (truncated)
+	// Output preview (truncated to fit content width)
 	if proc.Stdout != "" {
 		lines := strings.Split(proc.Stdout, "\n")
-		maxShow := 4
+		maxShow := 3
 		for i := 0; i < min(maxShow, len(lines)); i++ {
 			line := lines[i]
-			if len(line) > width-6 {
-				line = line[:width-9] + "..."
+			if len(line) > contentWidth {
+				line = line[:contentWidth-3] + "..."
 			}
 			content.WriteString(styles.SubtleText.Render(line))
 			content.WriteString("\n")
@@ -1331,6 +1453,13 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int) string {
 			content.WriteString(styles.SubtleText.Render(fmt.Sprintf("(+%d lines)", len(lines)-maxShow)))
 		}
 	}
+
+	// Create the box with exact width
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(width)
 
 	return box.Render(content.String())
 }

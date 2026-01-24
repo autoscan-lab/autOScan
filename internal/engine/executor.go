@@ -21,10 +21,16 @@ type Executor struct {
 	binaryDir    string // Directory where binaries are stored
 	outputName   string // Name of the binary (e.g., "a.out")
 	testFilesDir string // Directory where test files are bundled
+	shortNames   bool   // If true, folder names are truncated at first underscore
 }
 
 // NewExecutor creates a new executor.
 func NewExecutor(p *policy.Policy, binaryDir string) *Executor {
+	return NewExecutorWithOptions(p, binaryDir, false)
+}
+
+// NewExecutorWithOptions creates a new executor with options.
+func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool) *Executor {
 	outputName := p.Compile.Output
 	if outputName == "" {
 		outputName = "a.out"
@@ -40,23 +46,48 @@ func NewExecutor(p *policy.Policy, binaryDir string) *Executor {
 		binaryDir:    binaryDir,
 		outputName:   outputName,
 		testFilesDir: testFilesDir,
+		shortNames:   shortNames,
 	}
 }
 
 // GetBinaryPath returns the path to a submission's binary.
 func (e *Executor) GetBinaryPath(sub domain.Submission) string {
-	return filepath.Join(e.binaryDir, sub.ID, e.outputName)
+	dirName := sub.ID
+	if e.shortNames {
+		if idx := strings.Index(dirName, "_"); idx > 0 {
+			dirName = dirName[:idx]
+		}
+	}
+	return filepath.Join(e.binaryDir, dirName, e.outputName)
+}
+
+// GetSubmissionBinaryDir returns the directory where a submission's binaries are stored.
+func (e *Executor) GetSubmissionBinaryDir(sub domain.Submission) string {
+	dirName := sub.ID
+	if e.shortNames {
+		if idx := strings.Index(dirName, "_"); idx > 0 {
+			dirName = dirName[:idx]
+		}
+	}
+	return filepath.Join(e.binaryDir, dirName)
 }
 
 // Execute runs a submission's binary with the given arguments and input.
 func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []string, input string) domain.ExecuteResult {
 	binaryPath := e.GetBinaryPath(sub)
+	binaryDir := filepath.Dir(binaryPath)
+
+	// Resolve test file paths in args (convert relative test file names to absolute paths)
+	resolvedArgs := e.resolveTestFilePaths(args)
 
 	// Create command with timeout context
 	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(timeoutCtx, binaryPath, args...)
+	cmd := exec.CommandContext(timeoutCtx, binaryPath, resolvedArgs...)
+
+	// Set working directory to binary folder so generated files go there
+	cmd.Dir = binaryDir
 
 	// Set stdin if input provided
 	if input != "" {
@@ -277,9 +308,13 @@ func (e *Executor) executeMultiProcessWithOverrides(
 			// Build binary path - for multi-process, each source file has its own binary
 			// Binary is named after source file without .c extension
 			binaryName := strings.TrimSuffix(proc.SourceFile, ".c")
-			binaryPath := filepath.Join(e.binaryDir, sub.ID, binaryName)
+			binaryDir := e.GetSubmissionBinaryDir(sub)
+			binaryPath := filepath.Join(binaryDir, binaryName)
 
 			cmd := exec.CommandContext(timeoutCtx, binaryPath, args...)
+
+			// Set working directory to binary folder so generated files go there
+			cmd.Dir = binaryDir
 
 			if input != "" {
 				cmd.Stdin = strings.NewReader(input)

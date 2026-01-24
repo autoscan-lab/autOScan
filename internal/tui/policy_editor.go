@@ -27,7 +27,8 @@ const (
 	FieldLibraryFiles
 	FieldTestFiles
 	FieldTestCases
-	FieldMultiProcess // Process list section
+	FieldMultiProcess       // Process list section
+	FieldMultiProcessTests  // Multi-process test scenarios section
 	FieldSave
 	FieldCancel
 )
@@ -96,6 +97,19 @@ type PolicyEditor struct {
 		args       textinput.Model
 		delayMs    textinput.Model
 		focusedIdx int // 0=name, 1=source, 2=args, 3=delay, 4=save
+	}
+
+	// Multi-process test scenarios
+	testScenarios          []policy.MultiProcessScenario
+	testScenariosCursor    int
+	editingScenario        bool
+	editingScenarioIdx     int // -1 for new, >= 0 for editing existing
+	scenarioInputs         struct {
+		name         textinput.Model
+		processArgs  map[string]textinput.Model // process name -> args input
+		processStdin map[string]textinput.Model // process name -> stdin input
+		processExit  map[string]textinput.Model // process name -> expected exit input
+		focusedIdx   int                        // 0=name, then (1 + i*3)=args, (2 + i*3)=stdin, (3 + i*3)=exit for each process, last=save
 	}
 
 	focusedField PolicyEditorField
@@ -171,6 +185,12 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	procDelayInput.CharLimit = 10
 	procDelayInput.Width = 10
 
+	// Scenario name input
+	scenarioNameInput := textinput.New()
+	scenarioNameInput.Placeholder = "Test Scenario Name"
+	scenarioNameInput.CharLimit = 50
+	scenarioNameInput.Width = 40
+
 	pe := PolicyEditor{
 		isNew:              true,
 		nameInput:          nameInput,
@@ -184,6 +204,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 		testCases:          []policy.TestCase{},
 		runTimeout:         "5s",
 		multiProcessExecs:  []policy.ProcessConfig{},
+		testScenarios:      []policy.MultiProcessScenario{},
 	}
 
 	pe.testCaseInputs.name = tcNameInput
@@ -195,6 +216,11 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	pe.processInputs.sourceFile = procSourceInput
 	pe.processInputs.args = procArgsInput
 	pe.processInputs.delayMs = procDelayInput
+
+	pe.scenarioInputs.name = scenarioNameInput
+	pe.scenarioInputs.processArgs = make(map[string]textinput.Model)
+	pe.scenarioInputs.processStdin = make(map[string]textinput.Model)
+	pe.scenarioInputs.processExit = make(map[string]textinput.Model)
 
 	return pe
 }
@@ -233,11 +259,16 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 		e.multiProcessEnabled = p.Run.MultiProcess.Enabled
 		e.multiProcessExecs = make([]policy.ProcessConfig, len(p.Run.MultiProcess.Executables))
 		copy(e.multiProcessExecs, p.Run.MultiProcess.Executables)
+		// Copy test scenarios
+		e.testScenarios = make([]policy.MultiProcessScenario, len(p.Run.MultiProcess.TestScenarios))
+		copy(e.testScenarios, p.Run.MultiProcess.TestScenarios)
 	} else {
 		e.multiProcessEnabled = false
 		e.multiProcessExecs = []policy.ProcessConfig{}
+		e.testScenarios = []policy.MultiProcessScenario{}
 	}
 	e.multiProcessCursor = 0
+	e.testScenariosCursor = 0
 }
 
 // SetWidth sets the terminal width for responsive layout
@@ -283,6 +314,13 @@ func (e *PolicyEditor) Reset() {
 	e.editingProcess = false
 	e.editingProcessIdx = -1
 	e.resetProcessInputs()
+
+	// Reset test scenarios
+	e.testScenarios = []policy.MultiProcessScenario{}
+	e.testScenariosCursor = 0
+	e.editingScenario = false
+	e.editingScenarioIdx = -1
+	e.resetScenarioInputs()
 }
 
 func (e *PolicyEditor) resetTestCaseInputs() {
@@ -307,6 +345,95 @@ func (e *PolicyEditor) resetProcessInputs() {
 	e.processInputs.sourceFile.Blur()
 	e.processInputs.args.Blur()
 	e.processInputs.delayMs.Blur()
+}
+
+func (e *PolicyEditor) resetScenarioInputs() {
+	e.scenarioInputs.name.SetValue("")
+	e.scenarioInputs.name.Focus()
+	e.scenarioInputs.focusedIdx = 0
+	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
+	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
+	e.scenarioInputs.processExit = make(map[string]textinput.Model)
+}
+
+// initScenarioProcessInputs initializes input fields for each process in a scenario
+func (e *PolicyEditor) initScenarioProcessInputs() {
+	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
+	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
+	e.scenarioInputs.processExit = make(map[string]textinput.Model)
+
+	for _, proc := range e.multiProcessExecs {
+		argsInput := textinput.New()
+		argsInput.Placeholder = "arg1 arg2"
+		argsInput.CharLimit = 200
+		argsInput.Width = 30
+		e.scenarioInputs.processArgs[proc.Name] = argsInput
+
+		stdinInput := textinput.New()
+		stdinInput.Placeholder = "stdin (use \\n for newlines)"
+		stdinInput.CharLimit = 500
+		stdinInput.Width = 30
+		e.scenarioInputs.processStdin[proc.Name] = stdinInput
+
+		exitInput := textinput.New()
+		exitInput.Placeholder = "0"
+		exitInput.CharLimit = 5
+		exitInput.Width = 10
+		e.scenarioInputs.processExit[proc.Name] = exitInput
+	}
+}
+
+func (e *PolicyEditor) blurAllScenarioInputs() {
+	e.scenarioInputs.name.Blur()
+	for name := range e.scenarioInputs.processArgs {
+		input := e.scenarioInputs.processArgs[name]
+		input.Blur()
+		e.scenarioInputs.processArgs[name] = input
+	}
+	for name := range e.scenarioInputs.processStdin {
+		input := e.scenarioInputs.processStdin[name]
+		input.Blur()
+		e.scenarioInputs.processStdin[name] = input
+	}
+	for name := range e.scenarioInputs.processExit {
+		input := e.scenarioInputs.processExit[name]
+		input.Blur()
+		e.scenarioInputs.processExit[name] = input
+	}
+}
+
+func (e *PolicyEditor) focusCurrentScenarioInput() {
+	numProcesses := len(e.multiProcessExecs)
+	totalFields := 1 + (numProcesses * 3) + 1
+
+	if e.scenarioInputs.focusedIdx == 0 {
+		e.scenarioInputs.name.Focus()
+	} else if e.scenarioInputs.focusedIdx < totalFields-1 {
+		fieldOffset := e.scenarioInputs.focusedIdx - 1
+		procIdx := fieldOffset / 3
+		fieldType := fieldOffset % 3
+
+		if procIdx < len(e.multiProcessExecs) {
+			procName := e.multiProcessExecs[procIdx].Name
+			switch fieldType {
+			case 0: // args
+				if input, ok := e.scenarioInputs.processArgs[procName]; ok {
+					input.Focus()
+					e.scenarioInputs.processArgs[procName] = input
+				}
+			case 1: // stdin
+				if input, ok := e.scenarioInputs.processStdin[procName]; ok {
+					input.Focus()
+					e.scenarioInputs.processStdin[procName] = input
+				}
+			case 2: // exit
+				if input, ok := e.scenarioInputs.processExit[procName]; ok {
+					input.Focus()
+					e.scenarioInputs.processExit[procName] = input
+				}
+			}
+		}
+	}
 }
 
 // loadExistingTestFiles loads list of files from the test_files directory
@@ -733,6 +860,112 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 
+	// If editing a scenario
+	if e.editingScenario {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			numProcesses := len(e.multiProcessExecs)
+			// Total fields: name (0) + 3 per process + save button
+			totalFields := 1 + (numProcesses * 3) + 1
+
+			switch msg.String() {
+			case "esc":
+				e.editingScenario = false
+				e.editingScenarioIdx = -1
+				e.resetScenarioInputs()
+				return nil
+			case "tab", "down":
+				e.blurAllScenarioInputs()
+				e.scenarioInputs.focusedIdx = (e.scenarioInputs.focusedIdx + 1) % totalFields
+				e.focusCurrentScenarioInput()
+				return nil
+			case "shift+tab", "up":
+				e.blurAllScenarioInputs()
+				e.scenarioInputs.focusedIdx = (e.scenarioInputs.focusedIdx + totalFields - 1) % totalFields
+				e.focusCurrentScenarioInput()
+				return nil
+			case "enter":
+				saveIdx := totalFields - 1
+				if e.scenarioInputs.focusedIdx == saveIdx {
+					// Save button - create the scenario
+					scenario := policy.MultiProcessScenario{
+						Name:          e.scenarioInputs.name.Value(),
+						ProcessArgs:   make(map[string][]string),
+						ProcessInputs: make(map[string]string),
+						ExpectedExits: make(map[string]int),
+					}
+					if scenario.Name == "" {
+						scenario.Name = fmt.Sprintf("Scenario %d", len(e.testScenarios)+1)
+					}
+
+					// Collect values for each process
+					for _, proc := range e.multiProcessExecs {
+						if argsInput, ok := e.scenarioInputs.processArgs[proc.Name]; ok {
+							if args := argsInput.Value(); args != "" {
+								scenario.ProcessArgs[proc.Name] = strings.Fields(args)
+							}
+						}
+						if stdinInput, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
+							if stdin := stdinInput.Value(); stdin != "" {
+								scenario.ProcessInputs[proc.Name] = stdin
+							}
+						}
+						if exitInput, ok := e.scenarioInputs.processExit[proc.Name]; ok {
+							if exitStr := exitInput.Value(); exitStr != "" {
+								var exitCode int
+								if _, err := fmt.Sscanf(exitStr, "%d", &exitCode); err == nil {
+									scenario.ExpectedExits[proc.Name] = exitCode
+								}
+							}
+						}
+					}
+
+					// Update existing or add new
+					if e.editingScenarioIdx >= 0 && e.editingScenarioIdx < len(e.testScenarios) {
+						e.testScenarios[e.editingScenarioIdx] = scenario
+					} else {
+						e.testScenarios = append(e.testScenarios, scenario)
+					}
+					e.editingScenario = false
+					e.editingScenarioIdx = -1
+					e.resetScenarioInputs()
+					return nil
+				}
+			}
+
+			// Update focused input
+			var cmd tea.Cmd
+			if e.scenarioInputs.focusedIdx == 0 {
+				e.scenarioInputs.name, cmd = e.scenarioInputs.name.Update(msg)
+			} else if e.scenarioInputs.focusedIdx < totalFields-1 {
+				// Process field
+				fieldOffset := e.scenarioInputs.focusedIdx - 1
+				procIdx := fieldOffset / 3
+				fieldType := fieldOffset % 3
+
+				if procIdx < len(e.multiProcessExecs) {
+					procName := e.multiProcessExecs[procIdx].Name
+					switch fieldType {
+					case 0: // args
+						if input, ok := e.scenarioInputs.processArgs[procName]; ok {
+							e.scenarioInputs.processArgs[procName], cmd = input.Update(msg)
+						}
+					case 1: // stdin
+						if input, ok := e.scenarioInputs.processStdin[procName]; ok {
+							e.scenarioInputs.processStdin[procName], cmd = input.Update(msg)
+						}
+					case 2: // exit
+						if input, ok := e.scenarioInputs.processExit[procName]; ok {
+							e.scenarioInputs.processExit[procName], cmd = input.Update(msg)
+						}
+					}
+				}
+			}
+			return cmd
+		}
+		return nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle multi-process field specially
@@ -785,6 +1018,85 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 			case "k", "up":
 				if len(e.multiProcessExecs) > 0 && e.multiProcessCursor > 0 {
 					e.multiProcessCursor--
+				} else {
+					e.prevField()
+				}
+				return nil
+			case "tab":
+				e.nextField()
+				return nil
+			case "shift+tab":
+				e.prevField()
+				return nil
+			}
+			return nil
+		}
+
+		// Handle multi-process test scenarios field
+		if e.focusedField == FieldMultiProcessTests {
+			switch msg.String() {
+			case "a":
+				// Add new scenario (only if processes are defined)
+				if len(e.multiProcessExecs) > 0 {
+					e.editingScenario = true
+					e.editingScenarioIdx = -1
+					e.resetScenarioInputs()
+					e.initScenarioProcessInputs()
+					e.scenarioInputs.name.Focus()
+				}
+				return nil
+			case "enter":
+				// Edit selected scenario
+				if len(e.testScenarios) > 0 && e.testScenariosCursor < len(e.testScenarios) {
+					scenario := e.testScenarios[e.testScenariosCursor]
+					e.editingScenario = true
+					e.editingScenarioIdx = e.testScenariosCursor
+					e.initScenarioProcessInputs()
+					e.scenarioInputs.name.SetValue(scenario.Name)
+					// Load process-specific values
+					for _, proc := range e.multiProcessExecs {
+						if args, ok := scenario.ProcessArgs[proc.Name]; ok {
+							if input, exists := e.scenarioInputs.processArgs[proc.Name]; exists {
+								input.SetValue(strings.Join(args, " "))
+								e.scenarioInputs.processArgs[proc.Name] = input
+							}
+						}
+						if stdin, ok := scenario.ProcessInputs[proc.Name]; ok {
+							if input, exists := e.scenarioInputs.processStdin[proc.Name]; exists {
+								input.SetValue(stdin)
+								e.scenarioInputs.processStdin[proc.Name] = input
+							}
+						}
+						if exit, ok := scenario.ExpectedExits[proc.Name]; ok {
+							if input, exists := e.scenarioInputs.processExit[proc.Name]; exists {
+								input.SetValue(fmt.Sprintf("%d", exit))
+								e.scenarioInputs.processExit[proc.Name] = input
+							}
+						}
+					}
+					e.scenarioInputs.focusedIdx = 0
+					e.scenarioInputs.name.Focus()
+				}
+				return nil
+			case "d", "backspace":
+				// Delete selected scenario
+				if len(e.testScenarios) > 0 && e.testScenariosCursor < len(e.testScenarios) {
+					e.testScenarios = append(e.testScenarios[:e.testScenariosCursor], e.testScenarios[e.testScenariosCursor+1:]...)
+					if e.testScenariosCursor >= len(e.testScenarios) && e.testScenariosCursor > 0 {
+						e.testScenariosCursor--
+					}
+				}
+				return nil
+			case "j", "down":
+				if len(e.testScenarios) > 0 && e.testScenariosCursor < len(e.testScenarios)-1 {
+					e.testScenariosCursor++
+				} else {
+					e.nextField()
+				}
+				return nil
+			case "k", "up":
+				if len(e.testScenarios) > 0 && e.testScenariosCursor > 0 {
+					e.testScenariosCursor--
 				} else {
 					e.prevField()
 				}
@@ -1117,6 +1429,12 @@ func (e *PolicyEditor) save() tea.Cmd {
 						Input        string   `yaml:"input,omitempty"`
 						StartDelayMs int      `yaml:"start_delay_ms,omitempty"`
 					} `yaml:"executables"`
+					TestScenarios []struct {
+						Name          string              `yaml:"name"`
+						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+					} `yaml:"test_scenarios,omitempty"`
 				} `yaml:"multi_process,omitempty"`
 			} `yaml:"run,omitempty"`
 			RequiredFiles []string `yaml:"required_files,omitempty"`
@@ -1164,6 +1482,12 @@ func (e *PolicyEditor) save() tea.Cmd {
 						Input        string   `yaml:"input,omitempty"`
 						StartDelayMs int      `yaml:"start_delay_ms,omitempty"`
 					} `yaml:"executables"`
+					TestScenarios []struct {
+						Name          string              `yaml:"name"`
+						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+					} `yaml:"test_scenarios,omitempty"`
 				}{
 					Enabled: true,
 				}
@@ -1180,6 +1504,20 @@ func (e *PolicyEditor) save() tea.Cmd {
 						Args:         proc.Args,
 						Input:        proc.Input,
 						StartDelayMs: proc.StartDelayMs,
+					})
+				}
+				// Add test scenarios
+				for _, scenario := range e.testScenarios {
+					p.Run.MultiProcess.TestScenarios = append(p.Run.MultiProcess.TestScenarios, struct {
+						Name          string              `yaml:"name"`
+						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+					}{
+						Name:          scenario.Name,
+						ProcessArgs:   scenario.ProcessArgs,
+						ProcessInputs: scenario.ProcessInputs,
+						ExpectedExits: scenario.ExpectedExits,
 					})
 				}
 			}
@@ -1356,6 +1694,93 @@ func (e *PolicyEditor) View() string {
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
 		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter add  •  esc cancel"))
+
+		return b.String()
+	}
+
+	// If editing a test scenario (multi-process)
+	if e.editingScenario {
+		var b strings.Builder
+		if e.editingScenarioIdx >= 0 {
+			b.WriteString(styles.HeaderStyle.Render("Edit Test Scenario"))
+		} else {
+			b.WriteString(styles.HeaderStyle.Render("Add Test Scenario"))
+		}
+		b.WriteString("\n\n")
+
+		numProcesses := len(e.multiProcessExecs)
+		totalFields := 1 + (numProcesses * 3) + 1
+		saveIdx := totalFields - 1
+
+		box := styles.BoxStyle(90)
+		var content strings.Builder
+
+		cursor := func(focused bool) string {
+			if focused {
+				return "> "
+			}
+			return "  "
+		}
+
+		// Scenario name
+		content.WriteString(cursor(e.scenarioInputs.focusedIdx == 0))
+		content.WriteString("Scenario Name: ")
+		content.WriteString(e.scenarioInputs.name.View())
+		content.WriteString("\n\n")
+
+		// Per-process fields
+		content.WriteString(styles.SubtleText.Render("Configure each process:"))
+		content.WriteString("\n\n")
+
+		for i, proc := range e.multiProcessExecs {
+			content.WriteString(styles.Subtle.Render(fmt.Sprintf("  %s", proc.Name)))
+			content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
+			content.WriteString("\n")
+
+			argsIdx := 1 + (i * 3)
+			stdinIdx := 2 + (i * 3)
+			exitIdx := 3 + (i * 3)
+
+			// Args field
+			content.WriteString(cursor(e.scenarioInputs.focusedIdx == argsIdx))
+			content.WriteString("    Args:  ")
+			if input, ok := e.scenarioInputs.processArgs[proc.Name]; ok {
+				content.WriteString(input.View())
+			}
+			content.WriteString("\n")
+
+			// Stdin field
+			content.WriteString(cursor(e.scenarioInputs.focusedIdx == stdinIdx))
+			content.WriteString("    Stdin: ")
+			if input, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
+				content.WriteString(input.View())
+			}
+			content.WriteString("\n")
+
+			// Expected exit field
+			content.WriteString(cursor(e.scenarioInputs.focusedIdx == exitIdx))
+			content.WriteString("    Exit:  ")
+			if input, ok := e.scenarioInputs.processExit[proc.Name]; ok {
+				content.WriteString(input.View())
+			}
+			content.WriteString("\n\n")
+		}
+
+		// Save button
+		buttonText := "[ Add Scenario ]"
+		if e.editingScenarioIdx >= 0 {
+			buttonText = "[ Save Changes ]"
+		}
+		content.WriteString(cursor(e.scenarioInputs.focusedIdx == saveIdx))
+		if e.scenarioInputs.focusedIdx == saveIdx {
+			content.WriteString(styles.SelectedItem.Render(buttonText))
+		} else {
+			content.WriteString(styles.NormalItem.Render(buttonText))
+		}
+
+		b.WriteString(box.Render(content.String()))
+		b.WriteString("\n\n")
+		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
 
 		return b.String()
 	}
@@ -1623,8 +2048,13 @@ func (e *PolicyEditor) View() string {
 		}
 		tcDisplayItems[i] = name
 	}
+	// Add hint that test cases are for single-process mode
+	tcTitle := "Test Cases"
+	if e.multiProcessEnabled {
+		tcTitle = "Test Cases (Multi-Process OFF)"
+	}
 	tcContent := e.renderListSection(
-		"Test Cases",
+		tcTitle,
 		tcDisplayItems,
 		e.testCasesCursor,
 		e.focusedField == FieldTestCases,
@@ -1694,6 +2124,50 @@ func (e *PolicyEditor) View() string {
 	b.WriteString(row2)
 	b.WriteString("\n\n")
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// ROW 3: Multi-Process Test Scenarios (only shown when multi-process enabled)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	if e.multiProcessEnabled && len(e.multiProcessExecs) > 0 {
+		row3Height := 7
+
+		tsBorder := styles.Muted
+		if e.focusedField == FieldMultiProcessTests {
+			tsBorder = styles.Primary
+		}
+		tsBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tsBorder).
+			Padding(0, 1).
+			Width(colWidth*2 + 2). // Full width
+			Height(row3Height)
+
+		// Convert test scenarios to display names
+		tsDisplayItems := make([]string, len(e.testScenarios))
+		for i, ts := range e.testScenarios {
+			name := ts.Name
+			if name == "" {
+				name = fmt.Sprintf("Scenario %d", i+1)
+			}
+			if len(name) > 40 {
+				name = name[:37] + "..."
+			}
+			tsDisplayItems[i] = name
+		}
+		tsContent := e.renderListSection(
+			"Multi-Process Test Scenarios",
+			tsDisplayItems,
+			e.testScenariosCursor,
+			e.focusedField == FieldMultiProcessTests,
+			row3Height,
+			true, // editable
+		)
+
+		row3 := tsBox.Render(tsContent)
+		b.WriteString(row3)
+		b.WriteString("\n\n")
+	}
+
 	// Footer row: Buttons on left, context hints on right
 	keyStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#67E8F9")).
@@ -1719,6 +2193,10 @@ func (e *PolicyEditor) View() string {
 		hints.WriteString(keyStyle.Render("↵") + descStyle.Render(" edit") + "  ")
 		hints.WriteString(keyStyle.Render("d") + descStyle.Render(" delete") + "  ")
 	case FieldMultiProcess:
+		hints.WriteString(keyStyle.Render("a") + descStyle.Render(" add") + "  ")
+		hints.WriteString(keyStyle.Render("↵") + descStyle.Render(" edit") + "  ")
+		hints.WriteString(keyStyle.Render("d") + descStyle.Render(" delete") + "  ")
+	case FieldMultiProcessTests:
 		hints.WriteString(keyStyle.Render("a") + descStyle.Render(" add") + "  ")
 		hints.WriteString(keyStyle.Render("↵") + descStyle.Render(" edit") + "  ")
 		hints.WriteString(keyStyle.Render("d") + descStyle.Render(" delete") + "  ")
@@ -1784,7 +2262,7 @@ func (e *PolicyEditor) View() string {
 func (e *PolicyEditor) InSubMode() bool {
 	return e.browsingForLibs || e.browsingForTests ||
 		e.showingExistingLibs || e.showingExistingTests ||
-		e.editingTestCase || e.editingProcess
+		e.editingTestCase || e.editingProcess || e.editingScenario
 }
 
 // getScrollWindow calculates the visible window for a scrollable list
