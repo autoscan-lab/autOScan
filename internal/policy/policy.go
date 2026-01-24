@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/felipetrejos/autoscan/internal/config"
 	"gopkg.in/yaml.v3"
@@ -25,12 +26,19 @@ type Policy struct {
 	// Compile configures gcc compilation
 	Compile CompileConfig `yaml:"compile"`
 
+	// Run configures execution/testing of compiled binaries
+	Run RunConfig `yaml:"run"`
+
 	// RequiredFiles lists source files that must be present (e.g., ["S0.c", "S1.c"])
 	RequiredFiles []string `yaml:"required_files"`
 
 	// LibraryFiles lists additional source files to compile with each submission
 	// These are typically instructor-provided library files (e.g., ["lib/utils.c"])
 	LibraryFiles []string `yaml:"library_files"`
+
+	// TestFiles lists input files bundled for testing (e.g., ["input.txt", "data.bin"])
+	// These are copied to ~/.config/autoscan/test_files/ and can be referenced in args
+	TestFiles []string `yaml:"test_files,omitempty"`
 
 	// Report configures export options
 	Report ReportConfig `yaml:"report"`
@@ -61,6 +69,94 @@ type CompileConfig struct {
 
 	// Output is the output binary name
 	Output string `yaml:"output"`
+}
+
+// RunConfig controls execution/testing of compiled binaries.
+type RunConfig struct {
+	// Timeout is the maximum execution time (e.g., "5s", "10s")
+	Timeout string `yaml:"timeout"`
+
+	// TestCases are predefined test scenarios
+	TestCases []TestCase `yaml:"test_cases"`
+
+	// MultiProcess enables running multiple source files in parallel
+	// Useful for labs with producer/consumer or synchronization patterns
+	MultiProcess *MultiProcessConfig `yaml:"multi_process,omitempty"`
+}
+
+// MultiProcessConfig defines how to run multiple binaries in parallel.
+type MultiProcessConfig struct {
+	// Enabled activates multi-process mode
+	Enabled bool `yaml:"enabled"`
+
+	// Executables defines the separate binaries to run
+	// Each maps a source file to its execution config
+	Executables []ProcessConfig `yaml:"executables"`
+
+	// TestScenarios defines multiple test configurations for the processes
+	// Each scenario can have different args/inputs per process
+	TestScenarios []MultiProcessScenario `yaml:"test_scenarios,omitempty"`
+}
+
+// ProcessConfig defines how to run a single process in multi-process mode.
+type ProcessConfig struct {
+	// Name is a display name (e.g., "Producer", "Consumer")
+	Name string `yaml:"name"`
+
+	// SourceFile is the .c file that produces this binary
+	SourceFile string `yaml:"source_file"`
+
+	// Args are the DEFAULT command-line arguments for this process
+	// These are used when running without a specific test scenario
+	Args []string `yaml:"args,omitempty"`
+
+	// Input is stdin for this process (default)
+	Input string `yaml:"input,omitempty"`
+
+	// StartDelay in milliseconds before starting (for staggered starts)
+	StartDelayMs int `yaml:"start_delay_ms,omitempty"`
+}
+
+// MultiProcessScenario defines a test configuration for all processes.
+type MultiProcessScenario struct {
+	// Name is a display name for this scenario
+	Name string `yaml:"name"`
+
+	// ProcessArgs maps process name -> arguments for that process
+	ProcessArgs map[string][]string `yaml:"process_args,omitempty"`
+
+	// ProcessInputs maps process name -> stdin input for that process
+	ProcessInputs map[string]string `yaml:"process_inputs,omitempty"`
+
+	// ExpectedExits maps process name -> expected exit code
+	ExpectedExits map[string]int `yaml:"expected_exits,omitempty"`
+}
+
+// TestCase defines a single test scenario for running a submission.
+type TestCase struct {
+	// Name is a human-readable name for this test case
+	Name string `yaml:"name"`
+
+	// Args are command-line arguments to pass
+	Args []string `yaml:"args"`
+
+	// Input is stdin input to provide
+	Input string `yaml:"input"`
+
+	// ExpectedExit is the expected exit code (0 for success)
+	ExpectedExit *int `yaml:"expected_exit"`
+}
+
+// GetRunTimeout returns the run timeout duration, defaulting to 5s.
+func (p *Policy) GetRunTimeout() time.Duration {
+	if p.Run.Timeout == "" {
+		return 5 * time.Second
+	}
+	d, err := time.ParseDuration(p.Run.Timeout)
+	if err != nil {
+		return 5 * time.Second
+	}
+	return d
 }
 
 // ReportConfig controls export options.
@@ -163,14 +259,40 @@ func (p *Policy) BannedSet() map[string]struct{} {
 func (p *Policy) BuildGCCArgs(sourceFiles []string, libraryFiles []string, outputPath string) []string {
 	args := []string{}
 
-	// Add all flags (compiler + linker combined)
-	args = append(args, p.Compile.Flags...)
+	// Separate compiler flags from linker flags
+	// Compiler flags: -Wall, -Wextra, -g, -O2, etc.
+	// Linker flags: -lpthread, -lm, -lrt, etc. (start with -l)
+	var compilerFlags []string
+	var linkerFlags []string
 
-	// Add source files
+	for _, flag := range p.Compile.Flags {
+		if strings.HasPrefix(flag, "-l") {
+			// Linker flag (library) - must come after object files
+			linkerFlags = append(linkerFlags, flag)
+		} else {
+			// Compiler flag - comes before source files
+			compilerFlags = append(compilerFlags, flag)
+		}
+	}
+
+	// Add compiler flags first
+	args = append(args, compilerFlags...)
+
+	// Add source files (.c files - will be compiled)
 	args = append(args, sourceFiles...)
 
 	// Add library files (instructor-provided code)
-	args = append(args, libraryFiles...)
+	// Only add .c and .o files - .h files are included via #include
+	for _, libFile := range libraryFiles {
+		if strings.HasSuffix(libFile, ".c") || strings.HasSuffix(libFile, ".o") {
+			args = append(args, libFile)
+		}
+		// .h files are not passed to gcc - they're found via #include
+		// They just need to be in the libraries directory (added via -I flag if needed)
+	}
+
+	// Add linker flags AFTER object files (required by gcc)
+	args = append(args, linkerFlags...)
 
 	// Add output
 	args = append(args, "-o", outputPath)

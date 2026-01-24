@@ -17,6 +17,7 @@
 
 - Batch compile and grade C submissions
 - Detect banned function calls (e.g., `printf`, `fprintf`)
+- **Run and test compiled submissions** with custom arguments or preset test cases
 - Create and manage grading policies
 - Filter results by status (pass/fail/banned)
 - Export results to JSON or CSV
@@ -85,7 +86,8 @@ On first run, configs are created at `~/.config/autoscan/`:
 ~/.config/autoscan/
 ├── policies/        # Policy YAML files
 │   └── example.yaml
-├── libraries/       # Bundled library files (.c/.h)
+├── libraries/       # Bundled library files (.c/.h/.o)
+├── test_files/      # Bundled test input files
 ├── banned.yaml      # Global banned functions
 └── settings.yaml    # User preferences
 ```
@@ -98,19 +100,43 @@ compile:
   gcc: "gcc"
   flags: ["-Wall", "-Wextra", "-lpthread"]
   output: "lab03"
+run:
+  timeout: "5s"
+  test_cases:
+    - name: "Basic test"
+      args: ["2", "3"]
+      expected_exit: 0
 required_files: [S0.c, S1.c]
 library_files:
-  - /path/to/lib/utils.c
-  - /path/to/lib/helper.h
+  - hospital.h    # Header file
+  - hospital.o    # Pre-compiled object
+test_files:
+  - input.txt     # Test input file
 ```
 
 ### Library Files
 
-Library files are additional source files that get compiled with each student submission. This is useful for shared header files or instructor-provided utilities.
+Library files are additional files that get compiled/linked with each student submission. Supported types:
+
+| Extension | Purpose | How it's used |
+|-----------|---------|---------------|
+| `.c` | Source files | Compiled with student code |
+| `.h` | Header files | Found via `-I` flag for `#include` |
+| `.o` | Object files | Linked directly with student code |
 
 When you add a library file, it is **copied** to `~/.config/autoscan/libraries/` so it stays bundled with autoscan. You can run autoscan from anywhere and the library files will be available.
 
-Add library files via the policy editor (Manage Policies → select policy → Library Files section) using the file browser.
+**Example with pre-compiled library:**
+```yaml
+library_files:
+  - hospital.h   # Header for #include "hospital.h"
+  - hospital.o   # Pre-compiled object to link
+```
+
+Add library files via the policy editor:
+- `[a]` - Add new file from filesystem
+- `[e]` - Use existing bundled file
+- `[d]` - Remove from policy
 
 ### Banned Functions
 
@@ -126,7 +152,168 @@ banned:
 ### Settings
 
 - **Short Names** - Truncate folder names at first underscore
-- **Keep Binaries** - Preserve compiled binaries after grading
+- **Keep Binaries** - Preserve compiled binaries after grading (required for Run feature)
+
+---
+
+## Running Submissions
+
+The **Run** tab in the detail view lets you execute compiled submissions:
+
+### Requirements
+
+1. Enable **Keep Binaries** in Settings
+2. Submission must compile successfully
+
+### Custom Execution
+
+- Enter command-line arguments in the "Arguments" field
+- Enter stdin input in the "Stdin" field (use `\n` for newlines)
+- Press Enter on "Run" to execute
+
+### Preset Test Cases
+
+Define test cases in your policy for automated testing:
+
+```yaml
+name: "Lab 05 - Arguments"
+compile:
+  gcc: "gcc"
+  flags: ["-Wall"]
+  output: "lab05"
+run:
+  timeout: "5s"
+  test_cases:
+    - name: "No arguments"
+      args: []
+      expected_exit: 1
+    - name: "Valid input"
+      args: ["hello", "world"]
+      input: "test\n"
+      expected_exit: 0
+    - name: "Stress test"
+      args: ["--count", "1000"]
+      expected_exit: 0
+```
+
+**Test case fields:**
+- `name` - Human-readable test name
+- `args` - Array of command-line arguments
+- `input` - Stdin input to provide
+- `expected_exit` - Expected exit code (for pass/fail validation)
+
+Press `t` in the Run tab to execute all test cases at once.
+
+### Multi-Process Mode
+
+For labs requiring multiple programs to run simultaneously (like message queues, semaphores, or producer/consumer patterns), configure multi-process mode:
+
+```yaml
+name: "Lab 07 - Message Queues"
+compile:
+  gcc: "gcc"
+  flags: ["-Wall"]
+  output: "producer"  # Not used in multi-process mode
+run:
+  timeout: "10s"
+  multi_process:
+    enabled: true
+    executables:
+      - name: "Producer"
+        source_file: "producer.c"
+        args: ["queue1", "5"]
+      - name: "Consumer"
+        source_file: "consumer.c"
+        args: ["queue1"]
+        start_delay_ms: 100  # Start 100ms after producer
+      - name: "Monitor"
+        source_file: "monitor.c"
+        args: ["--verbose"]
+```
+
+**Multi-process fields:**
+- `name` - Display name for the process
+- `source_file` - The .c file (binary is named without .c extension)
+- `args` - Default command-line arguments
+- `input` - Stdin input
+- `start_delay_ms` - Delay before starting (for staggered startup)
+
+### Multi-Process Test Scenarios
+
+Define multiple test configurations for the entire multi-process setup:
+
+```yaml
+run:
+  multi_process:
+    enabled: true
+    executables:
+      - name: "Producer"
+        source_file: "producer.c"
+      - name: "Consumer"
+        source_file: "consumer.c"
+    test_scenarios:
+      - name: "No arguments (should fail)"
+        process_args:
+          Producer: []
+          Consumer: []
+        expected_exits:
+          Producer: 1
+          Consumer: 1
+      - name: "Valid files"
+        process_args:
+          Producer: ["input.txt", "pipe1"]
+          Consumer: ["pipe1", "output.txt"]
+        expected_exits:
+          Producer: 0
+          Consumer: 0
+      - name: "Missing input file"
+        process_args:
+          Producer: ["nonexistent.txt", "pipe1"]
+          Consumer: ["pipe1", "output.txt"]
+        expected_exits:
+          Producer: 1
+          Consumer: 0
+```
+
+**Keys:**
+- Press `[m]` to run with default args
+- Press `[1]`, `[2]`, etc. to run specific test scenarios
+
+### Bundled Test Files
+
+If tests require input files (`.txt`, `.bin`, etc.), bundle them with the policy:
+
+```yaml
+test_files:
+  - input.txt
+  - sample_data.bin
+  - expected_output.txt
+```
+
+**How it works:**
+1. Files are copied to `~/.config/autoscan/test_files/`
+2. When you use a bundled filename in test args, it auto-resolves to the full path
+3. Example: `args: ["input.txt"]` becomes `args: ["/home/user/.config/autoscan/test_files/input.txt"]`
+
+Add test files via the policy editor (similar to library files):
+- `[a]` - Add new file from filesystem
+- `[e]` - Use existing bundled file
+- `[d]` - Remove from policy
+
+Press `m` in the Run tab to execute all processes in parallel. Results are shown in a grid layout with pass/fail indicators.
+
+**Configuring via TUI:**
+1. Go to Manage Policies → Edit your policy
+2. Navigate to "Multi-Process" section
+3. Press `[a]` to add a process
+4. Fill in: Name, Source File, Arguments, Start Delay
+5. Press `[e]` to toggle enabled/disabled
+
+**Deadlock Handling:**
+
+If processes get stuck in a deadlock:
+- **Automatic timeout**: Processes are killed after the configured timeout (default 5s)
+- **Manual kill**: Press `Ctrl+K` while running to send SIGKILL 
 
 ---
 

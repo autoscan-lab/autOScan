@@ -77,7 +77,8 @@ func (h *HelpPanel) View() string {
 	features := []string{
 		"• Batch compile with gcc",
 		"• Detect banned functions",
-		"• Export to MD/JSON/CSV",
+		"• Run & test submissions",
+		"• Export to JSON/CSV",
 	}
 	for _, f := range features {
 		b.WriteString(featureStyle.Render(f))

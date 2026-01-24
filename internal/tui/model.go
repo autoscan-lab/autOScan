@@ -2,6 +2,8 @@
 package tui
 
 import (
+	"context"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -98,6 +100,17 @@ type (
 	uninstallDoneMsg    struct{}
 	bannedListLoadedMsg []string
 	bannedListSavedMsg  struct{}
+
+	// Execution messages
+	executeResultMsg struct {
+		result domain.ExecuteResult
+	}
+	executeTestResultsMsg struct {
+		results []domain.ExecuteResult
+	}
+	multiProcessResultMsg struct {
+		result *domain.MultiProcessResult
+	}
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +181,19 @@ type Model struct {
 	bannedCursor  int
 	expandedFuncs map[string]bool
 
+	// Run tab state
+	runArgsInput       textinput.Model
+	runStdinInput      textinput.Model
+	runInputFocused    int // 0 = args, 1 = stdin, 2 = run button, 3 = test cases, 4+ = multi-process
+	runResult          *domain.ExecuteResult
+	runTestResults     []domain.ExecuteResult
+	runTestCursor      int
+	isExecuting        bool
+	executor           *engine.Executor
+	multiProcessResult *domain.MultiProcessResult
+	showMultiProcess   bool
+	runCancelFunc      context.CancelFunc // To cancel/kill running processes
+
 	// Export
 	exportCursor int
 
@@ -197,6 +223,17 @@ func New(cfg Config) Model {
 	bannedInput.Placeholder = "function_name"
 	bannedInput.CharLimit = 64
 
+	// Initialize text inputs for run tab
+	runArgsInput := textinput.New()
+	runArgsInput.Placeholder = "arg1 arg2 arg3..."
+	runArgsInput.CharLimit = 256
+	runArgsInput.Width = 40
+
+	runStdinInput := textinput.New()
+	runStdinInput.Placeholder = "stdin input (use \\n for newlines)"
+	runStdinInput.CharLimit = 1024
+	runStdinInput.Width = 40
+
 	// Load settings
 	settings, _ := config.LoadSettings()
 
@@ -216,6 +253,8 @@ func New(cfg Config) Model {
 		menuItem:      MenuRunGrader,
 		policyEditor:  NewPolicyEditor(80, 40),
 		bannedInput:   bannedInput,
+		runArgsInput:  runArgsInput,
+		runStdinInput: runStdinInput,
 		eyeAnimation:  components.NewEyeAnimation(),
 		helpPanel:     helpPanel,
 	}

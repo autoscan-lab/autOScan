@@ -71,6 +71,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update help panel width
 		m.helpPanel.SetWidth(min(28, m.width/4))
+		// Update policy editor width
+		m.policyEditor.SetWidth(m.width)
 
 	case components.AnimationTickMsg:
 		cmd := m.eyeAnimation.Update(msg)
@@ -124,6 +126,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case bannedListSavedMsg:
 		m.statusMsg = "Banned list saved"
+		return m, nil
+
+	case executeResultMsg:
+		m.runResult = &msg.result
+		m.isExecuting = false
+		return m, nil
+
+	case executeTestResultsMsg:
+		m.runTestResults = msg.results
+		m.isExecuting = false
+		return m, nil
+
+	case multiProcessResultMsg:
+		m.multiProcessResult = msg.result
+		m.isExecuting = false
+		m.showMultiProcess = true
 		return m, nil
 	}
 
@@ -205,10 +223,14 @@ func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		if m.selectedPolicy < len(m.policies)-1 {
 			m.selectedPolicy++
+			// Clear executor when policy changes to force recreation
+			m.executor = nil
 		}
 	case "k", "up":
 		if m.selectedPolicy > 0 {
 			m.selectedPolicy--
+			// Clear executor when policy changes to force recreation
+			m.executor = nil
 		}
 	case "enter":
 		if len(m.policies) > 0 {
@@ -243,11 +265,13 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadBannedList()
 		} else if m.policyManageCursor == 0 {
 			m.policyEditor.Reset()
+			m.policyEditor.SetWidth(m.width)
 			m.currentView = ViewPolicyEditor
 			return m, textinput.Blink
 		} else {
 			m.policyEditor.Reset()
 			m.policyEditor.LoadPolicy(m.policies[m.policyManageCursor-1])
+			m.policyEditor.SetWidth(m.width)
 			m.currentView = ViewPolicyEditor
 			return m, textinput.Blink
 		}
@@ -255,6 +279,7 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
 			m.policyEditor.Reset()
 			m.policyEditor.LoadPolicy(m.policies[m.policyManageCursor-1])
+			m.policyEditor.SetWidth(m.width)
 			m.currentView = ViewPolicyEditor
 			return m, textinput.Blink
 		}
@@ -283,13 +308,11 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		if m.policyEditor.focusedField == FieldCancel || msg.String() == "esc" {
-			m.currentView = ViewPolicyManage
-			m.policyEditor.errorMsg = ""
-			return m, nil
-		}
+	// Only handle ESC at the top level if policy editor is not in a sub-mode
+	if msg.String() == "esc" && !m.policyEditor.InSubMode() {
+		m.currentView = ViewPolicyManage
+		m.policyEditor.errorMsg = ""
+		return m, nil
 	}
 
 	cmd := m.policyEditor.Update(msg)
@@ -365,6 +388,11 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor >= m.scrollOffset+m.visibleRows {
 				m.scrollOffset++
 			}
+			// Clear run results when switching submissions
+			m.runResult = nil
+			m.runTestResults = nil
+			m.multiProcessResult = nil
+			m.showMultiProcess = false
 		}
 	case "k", "up":
 		if m.cursor > 0 {
@@ -372,12 +400,24 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor < m.scrollOffset {
 				m.scrollOffset--
 			}
+			// Clear run results when switching submissions
+			m.runResult = nil
+			m.runTestResults = nil
+			m.multiProcessResult = nil
+			m.showMultiProcess = false
 		}
 	case "enter":
 		if len(filtered) > 0 {
 			m.currentView = ViewDetails
 			m.detailsTab = 0
 			m.detailScroll = 0
+			// Clear previous run results when entering details
+			m.runResult = nil
+			m.runTestResults = nil
+			m.multiProcessResult = nil
+			m.showMultiProcess = false
+			// Reset executor to ensure it uses current policy
+			m.executor = nil
 		}
 	case "f":
 		m.filter = (m.filter + 1) % 4
@@ -411,15 +451,31 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return len(filtered[m.cursor].Scan.HitsByFunction)
 	}
 
+	// Handle Run tab input fields
+	if m.detailsTab == 3 {
+		return m.updateRunTab(msg)
+	}
+
 	switch msg.String() {
 	case "tab":
-		m.detailsTab = (m.detailsTab + 1) % 3
+		m.detailsTab = (m.detailsTab + 1) % 4 // Now 4 tabs
 		m.detailScroll = 0
 		m.bannedCursor = 0
+		// Reset run tab state when entering
+		if m.detailsTab == 3 {
+			m.runInputFocused = 0
+			m.runArgsInput.Focus()
+			m.runStdinInput.Blur()
+		}
 	case "shift+tab":
-		m.detailsTab = (m.detailsTab + 2) % 3
+		m.detailsTab = (m.detailsTab + 3) % 4 // Now 4 tabs
 		m.detailScroll = 0
 		m.bannedCursor = 0
+		if m.detailsTab == 3 {
+			m.runInputFocused = 0
+			m.runArgsInput.Focus()
+			m.runStdinInput.Blur()
+		}
 	case "j", "down":
 		if m.detailsTab == 1 {
 			// Only allow scrolling if there are more functions below
@@ -461,8 +517,148 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewSubmissions
 		m.expandedFuncs = nil
 		m.bannedCursor = 0
+		m.runResult = nil
+		m.runTestResults = nil
 	}
 	return m, nil
+}
+
+// updateRunTab handles input for the Run tab
+func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Allow kill command while executing
+	if m.isExecuting {
+		switch msg.String() {
+		case "ctrl+k", "K":
+			// Kill all running processes
+			if m.runCancelFunc != nil {
+				m.runCancelFunc()
+				m.runCancelFunc = nil
+			}
+			m.isExecuting = false
+			m.statusMsg = "Processes killed (SIGKILL)"
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Get test case count for navigation
+	testCaseCount := 0
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
+	}
+
+	// Max focus: 0=args, 1=stdin, 2=run button, 3+=test cases
+	maxFocus := 2
+	if testCaseCount > 0 {
+		maxFocus = 2 + testCaseCount
+	}
+
+	switch msg.String() {
+	case "tab":
+		// Switch to next details tab
+		m.detailsTab = 0
+		m.detailScroll = 0
+		m.runArgsInput.Blur()
+		m.runStdinInput.Blur()
+		return m, nil
+
+	case "shift+tab":
+		// Switch to previous details tab
+		m.detailsTab = 2
+		m.detailScroll = 0
+		m.runArgsInput.Blur()
+		m.runStdinInput.Blur()
+		return m, nil
+
+	case "down", "j":
+		if m.runInputFocused < maxFocus {
+			m.runInputFocused++
+		}
+		// Update focus states
+		m.runArgsInput.Blur()
+		m.runStdinInput.Blur()
+		if m.runInputFocused == 0 {
+			m.runArgsInput.Focus()
+		} else if m.runInputFocused == 1 {
+			m.runStdinInput.Focus()
+		}
+		return m, nil
+
+	case "up", "k":
+		if m.runInputFocused > 0 {
+			m.runInputFocused--
+		}
+		m.runArgsInput.Blur()
+		m.runStdinInput.Blur()
+		if m.runInputFocused == 0 {
+			m.runArgsInput.Focus()
+		} else if m.runInputFocused == 1 {
+			m.runStdinInput.Focus()
+		}
+		return m, nil
+
+	case "enter":
+		if m.runInputFocused == 2 {
+			// Run with custom args
+			return m, m.executeSubmission()
+		} else if m.runInputFocused > 2 {
+			// Run specific test case
+			testIdx := m.runInputFocused - 3
+			return m, m.executeTestCase(testIdx)
+		}
+
+	case "r":
+		// Quick run with current args
+		if m.runInputFocused >= 2 {
+			return m, m.executeSubmission()
+		}
+
+	case "t":
+		// Run all test cases
+		if testCaseCount > 0 {
+			return m, m.executeAllTestCases()
+		}
+
+	case "m":
+		// Run multi-process mode if configured
+		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+			if m.policies[m.selectedPolicy].Run.MultiProcess != nil &&
+				m.policies[m.selectedPolicy].Run.MultiProcess.Enabled {
+				return m, m.executeMultiProcess()
+			}
+		}
+
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// Run specific test scenario by number
+		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+			mp := m.policies[m.selectedPolicy].Run.MultiProcess
+			if mp != nil && mp.Enabled && len(mp.TestScenarios) > 0 {
+				idx := int(msg.String()[0] - '1') // "1" -> 0, "2" -> 1, etc.
+				if idx >= 0 && idx < len(mp.TestScenarios) {
+					return m, m.executeMultiProcessScenario(idx)
+				}
+			}
+		}
+
+	case "esc", "q":
+		m.currentView = ViewSubmissions
+		m.expandedFuncs = nil
+		m.runResult = nil
+		m.runTestResults = nil
+		m.runArgsInput.Blur()
+		m.runStdinInput.Blur()
+		return m, nil
+	}
+
+	// Handle text input
+	var cmd tea.Cmd
+	if m.runInputFocused == 0 {
+		m.runArgsInput, cmd = m.runArgsInput.Update(msg)
+	} else if m.runInputFocused == 1 {
+		m.runStdinInput, cmd = m.runStdinInput.Update(msg)
+	}
+
+	return m, cmd
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -590,6 +786,12 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.cursor = 0
 	m.scrollOffset = 0
 	m.runError = ""
+	// Clear executor and run results to ensure fresh state
+	m.executor = nil
+	m.runResult = nil
+	m.runTestResults = nil
+	m.multiProcessResult = nil
+	m.showMultiProcess = false
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries
@@ -704,4 +906,227 @@ func (m Model) filteredResults() []domain.SubmissionResult {
 	}
 
 	return filtered
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Execution Commands
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (m *Model) getExecutor() *engine.Executor {
+	if m.executor != nil {
+		return m.executor
+	}
+
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return nil
+	}
+
+	// Determine binary directory
+	binDir := ""
+	if m.settings.KeepBinaries {
+		cwd, err := os.Getwd()
+		if err == nil {
+			binDir = filepath.Join(cwd, "autoscan_binaries")
+		}
+	}
+
+	if binDir == "" {
+		// Fall back to temp directory - but this means we need binaries to exist
+		return nil
+	}
+
+	m.executor = engine.NewExecutor(m.policies[m.selectedPolicy], binDir)
+	return m.executor
+}
+
+func (m *Model) executeSubmission() tea.Cmd {
+	filtered := m.filteredResults()
+	if m.cursor >= len(filtered) {
+		return nil
+	}
+
+	executor := m.getExecutor()
+	if executor == nil {
+		return func() tea.Msg {
+			return executeResultMsg{result: domain.ExecuteResult{
+				OK:     false,
+				Stderr: "Binaries not available. Enable 'Keep Binaries' in settings and re-run.",
+			}}
+		}
+	}
+
+	sub := filtered[m.cursor].Submission
+	argsStr := m.runArgsInput.Value()
+	stdinStr := m.runStdinInput.Value()
+
+	// Parse args (split by spaces, respecting quotes would be nice but simple split for now)
+	var args []string
+	if argsStr != "" {
+		args = strings.Fields(argsStr)
+	}
+
+	// Convert \n to actual newlines
+	stdinStr = strings.ReplaceAll(stdinStr, "\\n", "\n")
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	m.runCancelFunc = cancel
+	m.isExecuting = true
+
+	return func() tea.Msg {
+		result := executor.Execute(ctx, sub, args, stdinStr)
+		return executeResultMsg{result: result}
+	}
+}
+
+func (m Model) executeTestCase(testIdx int) tea.Cmd {
+	filtered := m.filteredResults()
+	if m.cursor >= len(filtered) {
+		return nil
+	}
+
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return nil
+	}
+
+	pol := m.policies[m.selectedPolicy]
+	if testIdx < 0 || testIdx >= len(pol.Run.TestCases) {
+		return nil
+	}
+
+	executor := m.getExecutor()
+	if executor == nil {
+		return func() tea.Msg {
+			return executeResultMsg{result: domain.ExecuteResult{
+				OK:     false,
+				Stderr: "Binaries not available. Enable 'Keep Binaries' in settings and re-run.",
+			}}
+		}
+	}
+
+	sub := filtered[m.cursor].Submission
+	tc := pol.Run.TestCases[testIdx]
+
+	m.isExecuting = true
+
+	return func() tea.Msg {
+		result := executor.ExecuteTestCase(context.Background(), sub, tc)
+		return executeResultMsg{result: result}
+	}
+}
+
+func (m Model) executeAllTestCases() tea.Cmd {
+	filtered := m.filteredResults()
+	if m.cursor >= len(filtered) {
+		return nil
+	}
+
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return nil
+	}
+
+	pol := m.policies[m.selectedPolicy]
+	if len(pol.Run.TestCases) == 0 {
+		return nil
+	}
+
+	executor := m.getExecutor()
+	if executor == nil {
+		return func() tea.Msg {
+			return executeTestResultsMsg{results: []domain.ExecuteResult{{
+				OK:     false,
+				Stderr: "Binaries not available. Enable 'Keep Binaries' in settings and re-run.",
+			}}}
+		}
+	}
+
+	sub := filtered[m.cursor].Submission
+
+	m.isExecuting = true
+
+	return func() tea.Msg {
+		results := executor.ExecuteAllTestCases(context.Background(), sub)
+		return executeTestResultsMsg{results: results}
+	}
+}
+
+func (m *Model) executeMultiProcess() tea.Cmd {
+	filtered := m.filteredResults()
+	if m.cursor >= len(filtered) {
+		return nil
+	}
+
+	// Verify we have a valid policy selected
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return nil
+	}
+
+	// Clear previous results before starting new execution
+	m.multiProcessResult = nil
+	m.showMultiProcess = false
+
+	// Ensure executor is using current policy (force recreation if needed)
+	m.executor = nil
+	executor := m.getExecutor()
+	if executor == nil || !executor.HasMultiProcess() {
+		return func() tea.Msg {
+			return multiProcessResultMsg{result: nil}
+		}
+	}
+
+	// Get current submission
+	sub := filtered[m.cursor].Submission
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	m.runCancelFunc = cancel
+	m.isExecuting = true
+
+	return func() tea.Msg {
+		result := executor.ExecuteMultiProcess(ctx, sub, nil)
+		return multiProcessResultMsg{result: result}
+	}
+}
+
+func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
+	filtered := m.filteredResults()
+	if m.cursor >= len(filtered) {
+		return nil
+	}
+
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return nil
+	}
+
+	mp := m.policies[m.selectedPolicy].Run.MultiProcess
+	if mp == nil || scenarioIdx < 0 || scenarioIdx >= len(mp.TestScenarios) {
+		return nil
+	}
+
+	// Clear previous results before starting new execution
+	m.multiProcessResult = nil
+	m.showMultiProcess = false
+
+	// Ensure executor is using current policy (force recreation if needed)
+	m.executor = nil
+	executor := m.getExecutor()
+	if executor == nil || !executor.HasMultiProcess() {
+		return func() tea.Msg {
+			return multiProcessResultMsg{result: nil}
+		}
+	}
+
+	// Get current submission
+	sub := filtered[m.cursor].Submission
+	scenario := mp.TestScenarios[scenarioIdx]
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	m.runCancelFunc = cancel
+	m.isExecuting = true
+
+	return func() tea.Msg {
+		result := executor.ExecuteMultiProcessScenario(ctx, sub, scenario, nil)
+		return multiProcessResultMsg{result: result}
+	}
 }

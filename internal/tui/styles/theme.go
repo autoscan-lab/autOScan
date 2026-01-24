@@ -3,7 +3,7 @@ package styles
 import "github.com/charmbracelet/lipgloss"
 
 // Application version
-const Version = "1.2.0"
+const Version = "2.0.0"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Color Palette

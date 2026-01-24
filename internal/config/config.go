@@ -78,6 +78,27 @@ func EnsureLibrariesDir() (string, error) {
 	return libDir, nil
 }
 
+// TestFilesDir returns the test_files directory path for bundled test input files
+func TestFilesDir() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "test_files"), nil
+}
+
+// EnsureTestFilesDir creates the test_files directory if it doesn't exist
+func EnsureTestFilesDir() (string, error) {
+	testDir, err := TestFilesDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		return "", err
+	}
+	return testDir, nil
+}
+
 // SettingsFile returns the settings.yaml file path
 func SettingsFile() (string, error) {
 	dir, err := Dir()
