@@ -11,6 +11,10 @@
   <a href="#"><img src="https://img.shields.io/badge/license-MIT-24292e?style=flat" /></a>
 </p>
 
+<p align="center">
+  <img src="screenshots/autoscan.png" alt="autOScan Screenshot" />
+</p>
+
 ---
 
 ## Features
