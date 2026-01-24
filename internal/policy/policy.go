@@ -67,8 +67,14 @@ type CompileConfig struct {
 	// Flags are all compiler/linker flags (e.g., ["-Wall", "-Wextra", "-lpthread"])
 	Flags []string `yaml:"flags"`
 
-	// Output is the output binary name
-	Output string `yaml:"output"`
+	// SourceFile is the main source file to compile (e.g., "S5.c")
+	// When set, only this file is compiled and the binary is named after it (S5.c -> S5)
+	// When empty, all .c files in the submission are compiled together
+	SourceFile string `yaml:"source_file,omitempty"`
+
+	// Output is the output binary name (legacy, use SourceFile instead)
+	// Only used when SourceFile is empty
+	Output string `yaml:"output,omitempty"`
 }
 
 // RunConfig controls execution/testing of compiled binaries.

@@ -14,82 +14,67 @@ import (
 	"github.com/felipetrejos/autoscan/internal/policy"
 )
 
-// Executor handles running compiled binaries.
 type Executor struct {
 	policy       *policy.Policy
 	timeout      time.Duration
-	binaryDir    string // Directory where binaries are stored
-	outputName   string // Name of the binary (e.g., "a.out")
-	testFilesDir string // Directory where test files are bundled
-	shortNames   bool   // If true, folder names are truncated at first underscore
+	binaryDir    string
+	outputName   string
+	testFilesDir string
+	shortNames   bool
 }
 
-// NewExecutor creates a new executor.
 func NewExecutor(p *policy.Policy, binaryDir string) *Executor {
 	return NewExecutorWithOptions(p, binaryDir, false)
 }
 
-// NewExecutorWithOptions creates a new executor with options.
 func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool) *Executor {
-	outputName := p.Compile.Output
+	outputName := strings.TrimSuffix(p.Compile.SourceFile, ".c")
 	if outputName == "" {
-		outputName = "a.out"
+		outputName = p.Compile.Output
+		if outputName == "" {
+			outputName = "a.out"
+		}
 	}
 
-	// Get test files directory
 	home, _ := os.UserHomeDir()
-	testFilesDir := filepath.Join(home, ".config", "autoscan", "test_files")
-
 	return &Executor{
 		policy:       p,
 		timeout:      p.GetRunTimeout(),
 		binaryDir:    binaryDir,
 		outputName:   outputName,
-		testFilesDir: testFilesDir,
+		testFilesDir: filepath.Join(home, ".config", "autoscan", "test_files"),
 		shortNames:   shortNames,
 	}
 }
 
-// GetBinaryPath returns the path to a submission's binary.
+func (e *Executor) submissionDirName(sub domain.Submission) string {
+	dirName := sub.ID
+	if e.shortNames {
+		if idx := strings.Index(dirName, "_"); idx > 0 {
+			dirName = dirName[:idx]
+		}
+	}
+	return dirName
+}
+
 func (e *Executor) GetBinaryPath(sub domain.Submission) string {
-	dirName := sub.ID
-	if e.shortNames {
-		if idx := strings.Index(dirName, "_"); idx > 0 {
-			dirName = dirName[:idx]
-		}
-	}
-	return filepath.Join(e.binaryDir, dirName, e.outputName)
+	return filepath.Join(e.binaryDir, e.submissionDirName(sub), e.outputName)
 }
 
-// GetSubmissionBinaryDir returns the directory where a submission's binaries are stored.
 func (e *Executor) GetSubmissionBinaryDir(sub domain.Submission) string {
-	dirName := sub.ID
-	if e.shortNames {
-		if idx := strings.Index(dirName, "_"); idx > 0 {
-			dirName = dirName[:idx]
-		}
-	}
-	return filepath.Join(e.binaryDir, dirName)
+	return filepath.Join(e.binaryDir, e.submissionDirName(sub))
 }
 
-// Execute runs a submission's binary with the given arguments and input.
 func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []string, input string) domain.ExecuteResult {
 	binaryPath := e.GetBinaryPath(sub)
 	binaryDir := filepath.Dir(binaryPath)
-
-	// Resolve test file paths in args (convert relative test file names to absolute paths)
 	resolvedArgs := e.resolveTestFilePaths(args)
 
-	// Create command with timeout context
 	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(timeoutCtx, binaryPath, resolvedArgs...)
-
-	// Set working directory to binary folder so generated files go there
 	cmd.Dir = binaryDir
-
-	// Set stdin if input provided
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
 	}
@@ -101,80 +86,48 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 	start := time.Now()
 	err := cmd.Run()
 	duration := time.Since(start)
-
-	// Check for timeout
 	timedOut := timeoutCtx.Err() == context.DeadlineExceeded
 
-	// Get exit code
 	exitCode := 0
-	ok := true
 	if err != nil {
-		ok = false
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-		} else if timedOut {
-			exitCode = -1
 		} else {
 			exitCode = -1
 		}
 	}
 
-	return domain.NewExecuteResult(
-		ok || exitCode >= 0, // OK if process ran (even with non-zero exit)
-		exitCode,
-		stdout.String(),
-		stderr.String(),
-		duration,
-		timedOut,
-		args,
-		input,
-	)
+	return domain.NewExecuteResult(exitCode >= 0 || err == nil, exitCode, stdout.String(), stderr.String(), duration, timedOut, args, input)
 }
 
-// ExecuteTestCase runs a submission against a predefined test case.
 func (e *Executor) ExecuteTestCase(ctx context.Context, sub domain.Submission, tc policy.TestCase) domain.ExecuteResult {
-	result := e.Execute(ctx, sub, tc.Args, tc.Input)
-	return result.WithTestCase(tc.Name, tc.ExpectedExit)
+	return e.Execute(ctx, sub, tc.Args, tc.Input).WithTestCase(tc.Name, tc.ExpectedExit)
 }
 
-// ExecuteAllTestCases runs all test cases defined in the policy.
 func (e *Executor) ExecuteAllTestCases(ctx context.Context, sub domain.Submission) []domain.ExecuteResult {
-	testCases := e.policy.Run.TestCases
-	if len(testCases) == 0 {
+	if len(e.policy.Run.TestCases) == 0 {
 		return nil
 	}
-
-	results := make([]domain.ExecuteResult, len(testCases))
-	for i, tc := range testCases {
+	results := make([]domain.ExecuteResult, len(e.policy.Run.TestCases))
+	for i, tc := range e.policy.Run.TestCases {
 		results[i] = e.ExecuteTestCase(ctx, sub, tc)
 	}
-
 	return results
 }
 
-// BinaryExists checks if the binary for a submission exists.
 func (e *Executor) BinaryExists(sub domain.Submission) bool {
-	binaryPath := e.GetBinaryPath(sub)
-	_, err := exec.LookPath(binaryPath)
-	if err != nil {
-		// Try if it exists as a file
-		cmd := exec.Command("test", "-f", binaryPath)
-		return cmd.Run() == nil
-	}
-	return true
+	_, err := os.Stat(e.GetBinaryPath(sub))
+	return err == nil
 }
 
-// HasMultiProcess returns true if the policy has multi-process mode configured.
 func (e *Executor) HasMultiProcess() bool {
 	return e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled
 }
 
-// GetMultiProcessConfig returns the multi-process configuration.
 func (e *Executor) GetMultiProcessConfig() *policy.MultiProcessConfig {
 	return e.policy.Run.MultiProcess
 }
 
-// GetTestScenarios returns the multi-process test scenarios.
 func (e *Executor) GetTestScenarios() []policy.MultiProcessScenario {
 	if e.policy.Run.MultiProcess == nil {
 		return nil
@@ -182,15 +135,12 @@ func (e *Executor) GetTestScenarios() []policy.MultiProcessScenario {
 	return e.policy.Run.MultiProcess.TestScenarios
 }
 
-// resolveTestFilePaths resolves any test file references in arguments.
-// If an arg matches a bundled test file name, it's replaced with the full path.
 func (e *Executor) resolveTestFilePaths(args []string) []string {
 	if len(e.policy.TestFiles) == 0 {
 		return args
 	}
 
-	// Build set of known test file names
-	testFileSet := make(map[string]bool)
+	testFileSet := make(map[string]bool, len(e.policy.TestFiles))
 	for _, tf := range e.policy.TestFiles {
 		testFileSet[tf] = true
 	}
@@ -198,7 +148,6 @@ func (e *Executor) resolveTestFilePaths(args []string) []string {
 	resolved := make([]string, len(args))
 	for i, arg := range args {
 		if testFileSet[arg] {
-			// Replace with full path
 			resolved[i] = filepath.Join(e.testFilesDir, arg)
 		} else {
 			resolved[i] = arg
@@ -207,32 +156,15 @@ func (e *Executor) resolveTestFilePaths(args []string) []string {
 	return resolved
 }
 
-// ExecuteMultiProcess runs multiple processes in parallel for a submission.
-// The onUpdate callback is called whenever a process produces output or finishes.
-func (e *Executor) ExecuteMultiProcess(
-	ctx context.Context,
-	sub domain.Submission,
-	onUpdate func(*domain.MultiProcessResult),
-) *domain.MultiProcessResult {
+func (e *Executor) ExecuteMultiProcess(ctx context.Context, sub domain.Submission, onUpdate func(*domain.MultiProcessResult)) *domain.MultiProcessResult {
 	return e.executeMultiProcessWithOverrides(ctx, sub, nil, onUpdate)
 }
 
-// ExecuteMultiProcessScenario runs a multi-process test scenario.
-func (e *Executor) ExecuteMultiProcessScenario(
-	ctx context.Context,
-	sub domain.Submission,
-	scenario policy.MultiProcessScenario,
-	onUpdate func(*domain.MultiProcessResult),
-) *domain.MultiProcessResult {
+func (e *Executor) ExecuteMultiProcessScenario(ctx context.Context, sub domain.Submission, scenario policy.MultiProcessScenario, onUpdate func(*domain.MultiProcessResult)) *domain.MultiProcessResult {
 	return e.executeMultiProcessWithOverrides(ctx, sub, &scenario, onUpdate)
 }
 
-func (e *Executor) executeMultiProcessWithOverrides(
-	ctx context.Context,
-	sub domain.Submission,
-	scenario *policy.MultiProcessScenario,
-	onUpdate func(*domain.MultiProcessResult),
-) *domain.MultiProcessResult {
+func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub domain.Submission, scenario *policy.MultiProcessScenario, onUpdate func(*domain.MultiProcessResult)) *domain.MultiProcessResult {
 	config := e.policy.Run.MultiProcess
 	if config == nil || len(config.Executables) == 0 {
 		return nil
@@ -244,7 +176,6 @@ func (e *Executor) executeMultiProcessWithOverrides(
 	}
 	start := time.Now()
 
-	// Create timeout context
 	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
@@ -254,13 +185,11 @@ func (e *Executor) executeMultiProcessWithOverrides(
 	for _, proc := range config.Executables {
 		wg.Add(1)
 
-		// Determine args and input for this process
 		args := proc.Args
 		input := proc.Input
 		var expectedExit *int
 
 		if scenario != nil {
-			// Override with scenario-specific config
 			if scenarioArgs, ok := scenario.ProcessArgs[proc.Name]; ok {
 				args = scenarioArgs
 			}
@@ -273,10 +202,8 @@ func (e *Executor) executeMultiProcessWithOverrides(
 			}
 		}
 
-		// Resolve test file paths in args
 		args = e.resolveTestFilePaths(args)
 
-		// Initialize process result
 		procResult := &domain.ProcessResult{
 			Name:         proc.Name,
 			SourceFile:   proc.SourceFile,
@@ -292,7 +219,6 @@ func (e *Executor) executeMultiProcessWithOverrides(
 		go func(proc policy.ProcessConfig, args []string, input string, procResult *domain.ProcessResult) {
 			defer wg.Done()
 
-			// Apply start delay if configured
 			if proc.StartDelayMs > 0 {
 				select {
 				case <-time.After(time.Duration(proc.StartDelayMs) * time.Millisecond):
@@ -305,17 +231,11 @@ func (e *Executor) executeMultiProcessWithOverrides(
 
 			procResult.StartedAt = time.Now()
 
-			// Build binary path - for multi-process, each source file has its own binary
-			// Binary is named after source file without .c extension
-			binaryName := strings.TrimSuffix(proc.SourceFile, ".c")
 			binaryDir := e.GetSubmissionBinaryDir(sub)
-			binaryPath := filepath.Join(binaryDir, binaryName)
+			binaryPath := filepath.Join(binaryDir, strings.TrimSuffix(proc.SourceFile, ".c"))
 
 			cmd := exec.CommandContext(timeoutCtx, binaryPath, args...)
-
-			// Set working directory to binary folder so generated files go there
 			cmd.Dir = binaryDir
-
 			if input != "" {
 				cmd.Stdin = strings.NewReader(input)
 			}
@@ -344,14 +264,12 @@ func (e *Executor) executeMultiProcessWithOverrides(
 			procResult.Stdout = stdout.String()
 			procResult.Stderr = stderr.String()
 
-			// Check if passed (matches expected exit code)
 			if procResult.ExpectedExit != nil {
 				procResult.Passed = !procResult.TimedOut && procResult.ExitCode == *procResult.ExpectedExit
 			} else {
 				procResult.Passed = !procResult.TimedOut
 			}
 
-			// Notify update
 			if onUpdate != nil {
 				mu.Lock()
 				onUpdate(result)

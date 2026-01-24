@@ -19,16 +19,24 @@ import (
 type PolicyEditorField int
 
 const (
+	// General settings
 	FieldName PolicyEditorField = iota
 	FieldFlags
-	FieldOutput
-	FieldRequiredFiles
-	FieldMultiProcessToggle // Toggle in settings section
 	FieldLibraryFiles
 	FieldTestFiles
-	FieldTestCases
-	FieldMultiProcess       // Process list section
-	FieldMultiProcessTests  // Multi-process test scenarios section
+
+	// Execution mode
+	FieldMultiProcessToggle // Toggle between single/multi-process
+
+	// Single-process mode fields
+	FieldSourceFile // Source file (e.g., "S5.c" -> binary "S5")
+	FieldTestCases  // Test cases for single-process
+
+	// Multi-process mode fields
+	FieldMultiProcess      // Process list section
+	FieldMultiProcessTests // Multi-process test scenarios section
+
+	// Actions
 	FieldSave
 	FieldCancel
 )
@@ -39,11 +47,12 @@ type PolicyEditor struct {
 	filePath string
 	width    int // Terminal width for responsive layout
 
-	// Input fields
-	nameInput          textinput.Model
-	flagsInput         textinput.Model
-	outputInput        textinput.Model
-	requiredFilesInput textinput.Model
+	// General settings input fields
+	nameInput  textinput.Model
+	flagsInput textinput.Model
+
+	// Single-process mode input
+	sourceFileInput textinput.Model // e.g., "S5.c" -> binary "S5"
 
 	// Library files (list of filenames)
 	libraryFiles       []string
@@ -130,15 +139,11 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	flagsInput.Width = 45
 	flagsInput.SetValue("-Wall -Wextra")
 
-	outputInput := textinput.New()
-	outputInput.Placeholder = "lab01"
-	outputInput.CharLimit = 50
-	outputInput.Width = 45
-
-	requiredFilesInput := textinput.New()
-	requiredFilesInput.Placeholder = "S0.c S1.c (space-separated)"
-	requiredFilesInput.CharLimit = 200
-	requiredFilesInput.Width = 45
+	// Single-process source file input
+	sourceFileInput := textinput.New()
+	sourceFileInput.Placeholder = "S5.c (binary will be S5)"
+	sourceFileInput.CharLimit = 50
+	sourceFileInput.Width = 45
 
 	// Initialize folder browser for library file selection
 	cwd, _ := os.Getwd()
@@ -192,17 +197,16 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	scenarioNameInput.Width = 40
 
 	pe := PolicyEditor{
-		isNew:              true,
-		nameInput:          nameInput,
-		flagsInput:         flagsInput,
-		outputInput:        outputInput,
-		requiredFilesInput: requiredFilesInput,
-		libraryFiles:       []string{},
-		folderBrowser:      NewFolderBrowser(cwd),
-		browsingStartDir:   cwd,
-		focusedField:       FieldName,
-		testCases:          []policy.TestCase{},
-		runTimeout:         "5s",
+		isNew:           true,
+		nameInput:       nameInput,
+		flagsInput:      flagsInput,
+		sourceFileInput: sourceFileInput,
+		libraryFiles:    []string{},
+		folderBrowser:   NewFolderBrowser(cwd),
+		browsingStartDir: cwd,
+		focusedField:    FieldName,
+		testCases:       []policy.TestCase{},
+		runTimeout:      "5s",
 		multiProcessExecs:  []policy.ProcessConfig{},
 		testScenarios:      []policy.MultiProcessScenario{},
 	}
@@ -232,8 +236,7 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 
 	e.nameInput.SetValue(p.Name)
 	e.flagsInput.SetValue(strings.Join(p.Compile.Flags, " "))
-	e.outputInput.SetValue(p.Compile.Output)
-	e.requiredFilesInput.SetValue(strings.Join(p.RequiredFiles, " "))
+	e.sourceFileInput.SetValue(p.Compile.SourceFile)
 
 	// Copy library files
 	e.libraryFiles = make([]string, len(p.LibraryFiles))
@@ -290,8 +293,7 @@ func (e *PolicyEditor) Reset() {
 	e.nameInput.SetValue("")
 	e.nameInput.Focus()
 	e.flagsInput.SetValue("-Wall -Wextra")
-	e.outputInput.SetValue("")
-	e.requiredFilesInput.SetValue("")
+	e.sourceFileInput.SetValue("")
 	e.libraryFiles = []string{}
 	e.libraryFilesCursor = 0
 	e.testFiles = []string{}
@@ -1322,10 +1324,8 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 		e.nameInput, cmd = e.nameInput.Update(msg)
 	case FieldFlags:
 		e.flagsInput, cmd = e.flagsInput.Update(msg)
-	case FieldOutput:
-		e.outputInput, cmd = e.outputInput.Update(msg)
-	case FieldRequiredFiles:
-		e.requiredFilesInput, cmd = e.requiredFilesInput.Update(msg)
+	case FieldSourceFile:
+		e.sourceFileInput, cmd = e.sourceFileInput.Update(msg)
 	}
 
 	return cmd
@@ -1334,6 +1334,8 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 func (e *PolicyEditor) nextField() {
 	e.blurAll()
 	e.focusedField++
+	// Skip mode-specific fields based on current mode
+	e.focusedField = e.adjustFieldForMode(e.focusedField, true)
 	if e.focusedField > FieldCancel {
 		e.focusedField = FieldName
 	}
@@ -1346,15 +1348,38 @@ func (e *PolicyEditor) prevField() {
 		e.focusedField = FieldCancel
 	} else {
 		e.focusedField--
+		// Skip mode-specific fields based on current mode
+		e.focusedField = e.adjustFieldForMode(e.focusedField, false)
 	}
 	e.focusCurrent()
+}
+
+// adjustFieldForMode skips fields that don't apply to current mode
+func (e *PolicyEditor) adjustFieldForMode(field PolicyEditorField, forward bool) PolicyEditorField {
+	// If multi-process is enabled, skip single-process fields
+	if e.multiProcessEnabled {
+		if field == FieldSourceFile || field == FieldTestCases {
+			if forward {
+				return FieldMultiProcess
+			}
+			return FieldMultiProcessToggle
+		}
+	} else {
+		// If multi-process is disabled, skip multi-process fields
+		if field == FieldMultiProcess || field == FieldMultiProcessTests {
+			if forward {
+				return FieldSave
+			}
+			return FieldTestCases
+		}
+	}
+	return field
 }
 
 func (e *PolicyEditor) blurAll() {
 	e.nameInput.Blur()
 	e.flagsInput.Blur()
-	e.outputInput.Blur()
-	e.requiredFilesInput.Blur()
+	e.sourceFileInput.Blur()
 }
 
 func (e *PolicyEditor) focusCurrent() {
@@ -1363,10 +1388,8 @@ func (e *PolicyEditor) focusCurrent() {
 		e.nameInput.Focus()
 	case FieldFlags:
 		e.flagsInput.Focus()
-	case FieldOutput:
-		e.outputInput.Focus()
-	case FieldRequiredFiles:
-		e.requiredFilesInput.Focus()
+	case FieldSourceFile:
+		e.sourceFileInput.Focus()
 	}
 }
 
@@ -1378,11 +1401,6 @@ func (e *PolicyEditor) save() tea.Cmd {
 			return policySaveErrorMsg{err: "Policy name is required"}
 		}
 
-		output := strings.TrimSpace(e.outputInput.Value())
-		if output == "" {
-			output = "a.out"
-		}
-
 		// Parse flags
 		flagsStr := strings.TrimSpace(e.flagsInput.Value())
 		var flags []string
@@ -1390,12 +1408,8 @@ func (e *PolicyEditor) save() tea.Cmd {
 			flags = strings.Fields(flagsStr)
 		}
 
-		// Parse required files
-		reqStr := strings.TrimSpace(e.requiredFilesInput.Value())
-		var requiredFiles []string
-		if reqStr != "" {
-			requiredFiles = strings.Fields(reqStr)
-		}
+		// Get source file for single-process mode
+		sourceFile := strings.TrimSpace(e.sourceFileInput.Value())
 
 		// Build policy struct for YAML
 		type TestCaseYAML struct {
@@ -1413,9 +1427,9 @@ func (e *PolicyEditor) save() tea.Cmd {
 				MinCFiles      int  `yaml:"min_c_files"`
 			} `yaml:"discover"`
 			Compile struct {
-				GCC    string   `yaml:"gcc"`
-				Flags  []string `yaml:"flags"`
-				Output string   `yaml:"output"`
+				GCC        string   `yaml:"gcc"`
+				Flags      []string `yaml:"flags"`
+				SourceFile string   `yaml:"source_file,omitempty"`
 			} `yaml:"compile"`
 			Run struct {
 				Timeout      string         `yaml:"timeout,omitempty"`
@@ -1437,10 +1451,9 @@ func (e *PolicyEditor) save() tea.Cmd {
 					} `yaml:"test_scenarios,omitempty"`
 				} `yaml:"multi_process,omitempty"`
 			} `yaml:"run,omitempty"`
-			RequiredFiles []string `yaml:"required_files,omitempty"`
-			LibraryFiles  []string `yaml:"library_files,omitempty"`
-			TestFiles     []string `yaml:"test_files,omitempty"`
-			Report        struct {
+			LibraryFiles []string `yaml:"library_files,omitempty"`
+			TestFiles    []string `yaml:"test_files,omitempty"`
+			Report       struct {
 				Export struct {
 					Markdown bool `yaml:"markdown"`
 				} `yaml:"export"`
@@ -1453,8 +1466,7 @@ func (e *PolicyEditor) save() tea.Cmd {
 		p.Discover.MinCFiles = 1
 		p.Compile.GCC = "gcc"
 		p.Compile.Flags = flags
-		p.Compile.Output = output
-		p.RequiredFiles = requiredFiles
+		p.Compile.SourceFile = sourceFile
 		p.LibraryFiles = e.libraryFiles
 		p.TestFiles = e.testFiles
 		p.Report.Export.Markdown = true
@@ -1909,6 +1921,7 @@ func (e *PolicyEditor) View() string {
 	if colWidth > 80 {
 		colWidth = 80 // Don't make columns too wide
 	}
+	fullWidth := colWidth*2 + 2
 
 	header := lipgloss.NewStyle().
 		Bold(true).
@@ -1923,49 +1936,38 @@ func (e *PolicyEditor) View() string {
 	b.WriteString("\n\n")
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// ROW 1: Compile Settings (left) | Library Files + Test Files (right)
+	// SECTION 1: GENERAL SETTINGS
 	// ─────────────────────────────────────────────────────────────────────────
 
-	// LEFT COLUMN: Compile settings
+	sectionHeader := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(styles.Primary)
+	b.WriteString(sectionHeader.Render("  GENERAL SETTINGS"))
+	b.WriteString("\n")
+
+	smallBoxHeight := 6
+
+	// ROW 1: Policy Name (left) | Compiler Flags (right)
 	formBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Muted).
 		Padding(0, 1).
 		Width(colWidth).
-		Height(14) // Fixed height to match right column
+		Height(4)
 
-	var form strings.Builder
-	form.WriteString(e.renderFieldCompact("Policy Name", e.nameInput.View(), FieldName))
-	form.WriteString(e.renderFieldCompact("Compiler Flags", e.flagsInput.View(), FieldFlags))
-	
-	// Output Binary - always show hint
-	form.WriteString(e.renderFieldCompactWithHint("Output Binary (If Multi-Process OFF)", e.outputInput.View(), FieldOutput))
-	
-	// Required Files - always show hint
-	form.WriteString(e.renderFieldCompactWithHint("Required Files (If Multi-Process OFF)", e.requiredFilesInput.View(), FieldRequiredFiles))
+	var nameContent strings.Builder
+	nameContent.WriteString(e.renderFieldCompact("Policy Name", e.nameInput.View(), FieldName))
+	leftRow1 := formBox.Render(nameContent.String())
 
-	// Multi-process toggle in settings
-	mpToggle := "OFF"
-	mpStyle := styles.SubtleText
-	if e.multiProcessEnabled {
-		mpToggle = "ON"
-		mpStyle = styles.SuccessText
-	}
-	if e.focusedField == FieldMultiProcessToggle {
-		form.WriteString(styles.Highlight.Render("> Multi-Process:"))
-		form.WriteString(" " + mpStyle.Render("["+mpToggle+"]"))
-	} else {
-		form.WriteString(styles.Subtle.Render("  Multi-Process:"))
-		form.WriteString(" " + mpStyle.Render("["+mpToggle+"]"))
-	}
-	form.WriteString("\n")
+	var flagsContent strings.Builder
+	flagsContent.WriteString(e.renderFieldCompact("Compiler Flags", e.flagsInput.View(), FieldFlags))
+	rightRow1 := formBox.Render(flagsContent.String())
 
-	leftCol1 := formBox.Render(form.String())
+	row1 := lipgloss.JoinHorizontal(lipgloss.Top, leftRow1, "  ", rightRow1)
+	b.WriteString(row1)
+	b.WriteString("\n")
 
-	// RIGHT COLUMN: Library Files + Test Files stacked
-	smallBoxHeight := 6
-
-	// Library files
+	// ROW 2: Library Files (left) | Test Files (right)
 	libBorder := styles.Muted
 	if e.focusedField == FieldLibraryFiles {
 		libBorder = styles.Primary
@@ -1977,7 +1979,6 @@ func (e *PolicyEditor) View() string {
 		Width(colWidth).
 		Height(smallBoxHeight)
 
-	// Convert library files to display names
 	libDisplayItems := make([]string, len(e.libraryFiles))
 	for i, f := range e.libraryFiles {
 		libDisplayItems[i] = filepath.Base(f)
@@ -1988,10 +1989,9 @@ func (e *PolicyEditor) View() string {
 		e.libraryFilesCursor,
 		e.focusedField == FieldLibraryFiles,
 		smallBoxHeight,
-		false, // not editable, just add/delete
+		false,
 	)
 
-	// Test files
 	tfBorder := styles.Muted
 	if e.focusedField == FieldTestFiles {
 		tfBorder = styles.Primary
@@ -2009,128 +2009,187 @@ func (e *PolicyEditor) View() string {
 		e.testFilesCursor,
 		e.focusedField == FieldTestFiles,
 		smallBoxHeight,
-		false, // not editable, just add/delete
+		false,
 	)
 
-	rightCol1 := libBox.Render(libContent) + "\n" + tfBox.Render(tfContent)
-
-	row1 := lipgloss.JoinHorizontal(lipgloss.Top, leftCol1, "  ", rightCol1)
-	b.WriteString(row1)
-	b.WriteString("\n\n")
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// ROW 2: Test Cases (left) | Multi-Process (right)
-	// ─────────────────────────────────────────────────────────────────────────
-
-	row2Height := 9
-
-	// LEFT: Test Cases
-	tcBorder := styles.Muted
-	if e.focusedField == FieldTestCases {
-		tcBorder = styles.Primary
-	}
-	tcBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(tcBorder).
-		Padding(0, 1).
-		Width(colWidth).
-		Height(row2Height)
-
-	// Convert test cases to display names
-	tcDisplayItems := make([]string, len(e.testCases))
-	for i, tc := range e.testCases {
-		name := tc.Name
-		if name == "" {
-			name = fmt.Sprintf("Test %d", i+1)
-		}
-		if len(name) > 30 {
-			name = name[:27] + "..."
-		}
-		tcDisplayItems[i] = name
-	}
-	// Add hint that test cases are for single-process mode
-	tcTitle := "Test Cases"
-	if e.multiProcessEnabled {
-		tcTitle = "Test Cases (Multi-Process OFF)"
-	}
-	tcContent := e.renderListSection(
-		tcTitle,
-		tcDisplayItems,
-		e.testCasesCursor,
-		e.focusedField == FieldTestCases,
-		row2Height,
-		true, // editable - can edit individual test cases
-	)
-
-	leftCol2 := tcBox.Render(tcContent)
-
-	// RIGHT: Multi-Process
-	mpBorder := styles.Muted
-	if e.focusedField == FieldMultiProcess {
-		mpBorder = styles.Primary
-	}
-	mpBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(mpBorder).
-		Padding(0, 1).
-		Width(colWidth).
-		Height(row2Height)
-
-	// Processes list (multi-process toggle is in settings)
-	var mpContent strings.Builder
-
-	// Title with count and editable indicator
-	if e.focusedField == FieldMultiProcess {
-		mpContent.WriteString(styles.Highlight.Render("Processes"))
-	} else {
-		mpContent.WriteString("Processes")
-	}
-	mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(e.multiProcessExecs))))
-
-	// Calculate max items area
-	innerHeight := row2Height - 2 // minus border
-	maxItems := innerHeight - 1   // just title
-	if maxItems < 1 {
-		maxItems = 1
-	}
-
-	if len(e.multiProcessExecs) == 0 {
-		mpContent.WriteString("\n")
-		mpContent.WriteString(styles.SubtleText.Render("  (none)"))
-	} else {
-		start, end := e.getScrollWindow(e.multiProcessCursor, len(e.multiProcessExecs), maxItems)
-		for i := start; i < end; i++ {
-			proc := e.multiProcessExecs[i]
-			name := proc.Name
-			if len(name) > 25 {
-				name = name[:22] + "..."
-			}
-			mpContent.WriteString("\n")
-			if e.focusedField == FieldMultiProcess && i == e.multiProcessCursor {
-				mpContent.WriteString("> " + styles.SelectedItem.Render(name))
-			} else {
-				mpContent.WriteString("  " + styles.NormalItem.Render(name))
-			}
-		}
-		if len(e.multiProcessExecs) > maxItems {
-			mpContent.WriteString("\n")
-			mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(e.multiProcessExecs))))
-		}
-	}
-
-	rightCol2 := mpBox.Render(mpContent.String())
-
-	row2 := lipgloss.JoinHorizontal(lipgloss.Top, leftCol2, "  ", rightCol2)
+	row2 := lipgloss.JoinHorizontal(lipgloss.Top, libBox.Render(libContent), "  ", tfBox.Render(tfContent))
 	b.WriteString(row2)
 	b.WriteString("\n\n")
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// ROW 3: Multi-Process Test Scenarios (only shown when multi-process enabled)
+	// SECTION 2: EXECUTION MODE
 	// ─────────────────────────────────────────────────────────────────────────
 
-	if e.multiProcessEnabled && len(e.multiProcessExecs) > 0 {
-		row3Height := 7
+	b.WriteString(sectionHeader.Render("  EXECUTION MODE"))
+	b.WriteString(styles.SubtleText.Render("  e/↵ toggle"))
+	b.WriteString("\n")
 
+	// Mode toggle box (full width)
+	modeBorder := styles.Muted
+	if e.focusedField == FieldMultiProcessToggle {
+		modeBorder = styles.Primary
+	}
+	modeBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(modeBorder).
+		Padding(0, 2).
+		Width(fullWidth)
+
+	var modeContent strings.Builder
+	if !e.multiProcessEnabled {
+		modeContent.WriteString(styles.SuccessText.Render("● Single Process"))
+		modeContent.WriteString(styles.SubtleText.Render(" - Compile one source file into one binary"))
+	} else {
+		modeContent.WriteString(styles.SubtleText.Render("○ Single Process"))
+		modeContent.WriteString(styles.SubtleText.Render(" - Compile one source file into one binary"))
+	}
+	modeContent.WriteString("    ")
+	if e.multiProcessEnabled {
+		modeContent.WriteString(styles.SuccessText.Render("● Multi-Process"))
+		modeContent.WriteString(styles.SubtleText.Render(" - Multiple binaries running in parallel"))
+	} else {
+		modeContent.WriteString(styles.SubtleText.Render("○ Multi-Process"))
+		modeContent.WriteString(styles.SubtleText.Render(" - Multiple binaries running in parallel"))
+	}
+
+	b.WriteString(modeBox.Render(modeContent.String()))
+	b.WriteString("\n\n")
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// SECTION 3: MODE-SPECIFIC CONFIGURATION
+	// ─────────────────────────────────────────────────────────────────────────
+
+	if e.multiProcessEnabled {
+		b.WriteString(sectionHeader.Render("  MULTI-PROCESS CONFIGURATION"))
+	} else {
+		b.WriteString(sectionHeader.Render("  SINGLE-PROCESS CONFIGURATION"))
+	}
+	b.WriteString("\n")
+
+	row2Height := 9
+
+	if !e.multiProcessEnabled {
+		// ─── SINGLE-PROCESS MODE ───
+		// LEFT: Source file input (match height of Test Cases box)
+		srcBorder := styles.Muted
+		if e.focusedField == FieldSourceFile {
+			srcBorder = styles.Primary
+		}
+		srcBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(srcBorder).
+			Padding(0, 1).
+			Width(colWidth).
+			Height(row2Height)
+
+		var srcContent strings.Builder
+		srcContent.WriteString(e.renderFieldCompact("Source File", e.sourceFileInput.View(), FieldSourceFile))
+		srcContent.WriteString(styles.SubtleText.Render("  Binary will be named: "))
+		sourceFile := strings.TrimSpace(e.sourceFileInput.Value())
+		if sourceFile != "" {
+			binaryName := sourceFile
+			if ext := filepath.Ext(binaryName); ext == ".c" {
+				binaryName = binaryName[:len(binaryName)-len(ext)]
+			}
+			srcContent.WriteString(styles.Subtle.Render(binaryName))
+		} else {
+			srcContent.WriteString(styles.SubtleText.Render("(enter source file)"))
+		}
+
+		leftCol2 := srcBox.Render(srcContent.String())
+
+		// RIGHT: Test Cases
+		tcBorder := styles.Muted
+		if e.focusedField == FieldTestCases {
+			tcBorder = styles.Primary
+		}
+		tcBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tcBorder).
+			Padding(0, 1).
+			Width(colWidth).
+			Height(row2Height)
+
+		tcDisplayItems := make([]string, len(e.testCases))
+		for i, tc := range e.testCases {
+			name := tc.Name
+			if name == "" {
+				name = fmt.Sprintf("Test %d", i+1)
+			}
+			if len(name) > 30 {
+				name = name[:27] + "..."
+			}
+			tcDisplayItems[i] = name
+		}
+		tcContent := e.renderListSection(
+			"Test Cases",
+			tcDisplayItems,
+			e.testCasesCursor,
+			e.focusedField == FieldTestCases,
+			row2Height,
+			true,
+		)
+
+		rightCol2 := tcBox.Render(tcContent)
+
+		row2 := lipgloss.JoinHorizontal(lipgloss.Top, leftCol2, "  ", rightCol2)
+		b.WriteString(row2)
+		b.WriteString("\n\n")
+	} else {
+		// ─── MULTI-PROCESS MODE ───
+		// LEFT: Processes list
+		mpBorder := styles.Muted
+		if e.focusedField == FieldMultiProcess {
+			mpBorder = styles.Primary
+		}
+		mpBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(mpBorder).
+			Padding(0, 1).
+			Width(colWidth).
+			Height(row2Height)
+
+		var mpContent strings.Builder
+		if e.focusedField == FieldMultiProcess {
+			mpContent.WriteString(styles.Highlight.Render("Processes"))
+		} else {
+			mpContent.WriteString("Processes")
+		}
+		mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(e.multiProcessExecs))))
+
+		innerHeight := row2Height - 2
+		maxItems := innerHeight - 1
+		if maxItems < 1 {
+			maxItems = 1
+		}
+
+		if len(e.multiProcessExecs) == 0 {
+			mpContent.WriteString("\n")
+			mpContent.WriteString(styles.SubtleText.Render("  (none)"))
+		} else {
+			start, end := e.getScrollWindow(e.multiProcessCursor, len(e.multiProcessExecs), maxItems)
+			for i := start; i < end; i++ {
+				proc := e.multiProcessExecs[i]
+				name := proc.Name
+				if len(name) > 25 {
+					name = name[:22] + "..."
+				}
+				mpContent.WriteString("\n")
+				if e.focusedField == FieldMultiProcess && i == e.multiProcessCursor {
+					mpContent.WriteString("> " + styles.SelectedItem.Render(name))
+				} else {
+					mpContent.WriteString("  " + styles.NormalItem.Render(name))
+				}
+			}
+			if len(e.multiProcessExecs) > maxItems {
+				mpContent.WriteString("\n")
+				mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(e.multiProcessExecs))))
+			}
+		}
+
+		leftCol2 := mpBox.Render(mpContent.String())
+
+		// RIGHT: Test Scenarios
 		tsBorder := styles.Muted
 		if e.focusedField == FieldMultiProcessTests {
 			tsBorder = styles.Primary
@@ -2139,32 +2198,33 @@ func (e *PolicyEditor) View() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(tsBorder).
 			Padding(0, 1).
-			Width(colWidth*2 + 2). // Full width
-			Height(row3Height)
+			Width(colWidth).
+			Height(row2Height)
 
-		// Convert test scenarios to display names
 		tsDisplayItems := make([]string, len(e.testScenarios))
 		for i, ts := range e.testScenarios {
 			name := ts.Name
 			if name == "" {
 				name = fmt.Sprintf("Scenario %d", i+1)
 			}
-			if len(name) > 40 {
-				name = name[:37] + "..."
+			if len(name) > 30 {
+				name = name[:27] + "..."
 			}
 			tsDisplayItems[i] = name
 		}
 		tsContent := e.renderListSection(
-			"Multi-Process Test Scenarios",
+			"Test Scenarios",
 			tsDisplayItems,
 			e.testScenariosCursor,
 			e.focusedField == FieldMultiProcessTests,
-			row3Height,
-			true, // editable
+			row2Height,
+			true,
 		)
 
-		row3 := tsBox.Render(tsContent)
-		b.WriteString(row3)
+		rightCol2 := tsBox.Render(tsContent)
+
+		row2 := lipgloss.JoinHorizontal(lipgloss.Top, leftCol2, "  ", rightCol2)
+		b.WriteString(row2)
 		b.WriteString("\n\n")
 	}
 
