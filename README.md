@@ -29,11 +29,20 @@
 
 ## Installation
 
-Download the binary from [Releases](https://github.com/Feli05/autOScan/releases), then:
+**Supported Platforms:** macOS (arm64) and Linux (amd64)
 
+Download the appropriate binary from [Releases](https://github.com/Feli05/autOScan/releases):
+
+**macOS:**
 ```bash
 chmod +x autoscan-darwin-arm64
 ./autoscan-darwin-arm64
+```
+
+**Linux:**
+```bash
+chmod +x autoscan-linux-amd64
+./autoscan-linux-amd64
 ```
 
 On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add to PATH if needed.
