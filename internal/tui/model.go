@@ -155,8 +155,7 @@ type Model struct {
 }
 
 type Config struct {
-	PolicyPath string
-	Root       string
+	Root string
 }
 
 func New(cfg Config) Model {

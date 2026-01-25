@@ -170,6 +170,7 @@ banned:
 
 - **Short Names** - Truncate folder names at first underscore
 - **Keep Binaries** - Preserve compiled binaries after grading (required for Run feature)
+- **Max Workers** - Limit concurrent compilation processes (0 = use all CPUs)
 
 ---
 

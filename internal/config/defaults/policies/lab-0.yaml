@@ -1,4 +1,4 @@
-name: S0-fds
+name: Lab-0
 root: .
 discover:
     leaf_submission: true
@@ -13,11 +13,3 @@ run:
     test_cases:
         - name: No args
           expected_exit: 0
-        - name: Pass test files
-          args:
-            - routes.bin
-            - stations.txt
-          expected_exit: 0
-test_files:
-    - routes.bin
-    - stations.txt

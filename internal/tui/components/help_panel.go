@@ -123,25 +123,3 @@ func RenderHelpBar(items []HelpItem) string {
 	return "  " + strings.Join(parts, "  •  ")
 }
 
-type ContextualHelp struct {
-	tips map[int][]string
-}
-
-func NewContextualHelp() ContextualHelp {
-	return ContextualHelp{
-		tips: map[int][]string{
-			0: {"Select a policy to start grading", "Press Enter to continue"},
-			1: {"Create, edit, or delete policies", "Manage banned function list"},
-			2: {"Configure display options", "Settings are saved automatically"},
-			3: {"Remove autOScan and all configs", "This action is irreversible"},
-			4: {"Exit the application", "Progress is auto-saved"},
-		},
-	}
-}
-
-func (c *ContextualHelp) GetTips(menuIndex int) []string {
-	if tips, ok := c.tips[menuIndex]; ok {
-		return tips
-	}
-	return []string{}
-}

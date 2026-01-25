@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -219,6 +220,16 @@ func (m Model) renderPolicySelect() string {
 			details.WriteString(filepath.Base(relPath))
 			details.WriteString("\n")
 
+			// Mode indicator
+			isMultiProcess := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
+			details.WriteString(styles.SubtleText.Render("  Mode:     "))
+			if isMultiProcess {
+				details.WriteString(styles.SuccessText.Render("Multi-Process"))
+			} else {
+				details.WriteString("Single Process")
+			}
+			details.WriteString("\n")
+
 			// Compiler flags
 			details.WriteString(styles.SubtleText.Render("  Flags:    "))
 			if len(p.Compile.Flags) > 0 {
@@ -228,20 +239,72 @@ func (m Model) renderPolicySelect() string {
 			}
 			details.WriteString("\n")
 
-			// Output binary
-			details.WriteString(styles.SubtleText.Render("  Output:   "))
-			if p.Compile.Output != "" {
-				details.WriteString(p.Compile.Output)
-			} else {
-				details.WriteString("a.out")
-			}
-			details.WriteString("\n")
-
 			// Required files
 			if len(p.RequiredFiles) > 0 {
 				details.WriteString(styles.SubtleText.Render("  Required: "))
 				details.WriteString(strings.Join(p.RequiredFiles, ", "))
 				details.WriteString("\n")
+			}
+
+			// Library files
+			if len(p.LibraryFiles) > 0 {
+				details.WriteString(styles.SubtleText.Render("  Libraries:"))
+				details.WriteString(strings.Join(p.LibraryFiles, ", "))
+				details.WriteString("\n")
+			}
+
+			details.WriteString("\n")
+
+			if isMultiProcess {
+				// Multi-process details
+				mp := p.Run.MultiProcess
+				details.WriteString(styles.PrimaryText.Render("  Executables"))
+				details.WriteString("\n")
+				for _, proc := range mp.Executables {
+					details.WriteString(fmt.Sprintf("    • %s ", proc.Name))
+					details.WriteString(styles.SubtleText.Render(fmt.Sprintf("(%s)", proc.SourceFile)))
+					if proc.StartDelayMs > 0 {
+						details.WriteString(styles.SubtleText.Render(fmt.Sprintf(" +%dms", proc.StartDelayMs)))
+					}
+					details.WriteString("\n")
+				}
+
+				if len(mp.TestScenarios) > 0 {
+					details.WriteString("\n")
+					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Scenarios (%d)", len(mp.TestScenarios))))
+					details.WriteString("\n")
+					for i, scenario := range mp.TestScenarios {
+						if i >= 3 {
+							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(mp.TestScenarios)-3)))
+							details.WriteString("\n")
+							break
+						}
+						details.WriteString(fmt.Sprintf("    • %s\n", scenario.Name))
+					}
+				}
+			} else {
+				// Single process details
+				if p.Compile.SourceFile != "" {
+					details.WriteString(styles.SubtleText.Render("  Source:   "))
+					details.WriteString(p.Compile.SourceFile)
+					details.WriteString("\n")
+				}
+
+				if len(p.Run.TestCases) > 0 {
+					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Cases (%d)", len(p.Run.TestCases))))
+					details.WriteString("\n")
+					for i, tc := range p.Run.TestCases {
+						if i >= 3 {
+							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(p.Run.TestCases)-3)))
+							details.WriteString("\n")
+							break
+						}
+						details.WriteString(fmt.Sprintf("    • %s\n", tc.Name))
+					}
+				} else {
+					details.WriteString(styles.SubtleText.Render("  No test cases defined"))
+					details.WriteString("\n")
+				}
 			}
 
 			b.WriteString(detailBox.Render(details.String()))
@@ -339,7 +402,8 @@ func (m Model) renderSettings() string {
 	b.WriteString(styles.HeaderStyle.Render("Settings"))
 	b.WriteString("\n\n")
 
-	box := styles.BoxStyle(min(70, m.width-4))
+	boxWidth := components.BoxWidth(m.width, 4, 80)
+	box := styles.BoxStyle(boxWidth)
 
 	var content strings.Builder
 	content.WriteString(styles.SubtleText.Render("Display Options"))
@@ -363,6 +427,28 @@ func (m Model) renderSettings() string {
 		Focused:     m.settingsCursor == 1,
 	}
 	content.WriteString(toggle2.View())
+	content.WriteString("\n\n")
+
+	// Max workers
+	workersLabel := "Max Workers"
+	cpuCount := runtime.NumCPU()
+	var workersValue string
+	if m.settings.MaxWorkers == 0 {
+		workersValue = fmt.Sprintf("All CPUs (%d)", cpuCount)
+	} else {
+		workersValue = fmt.Sprintf("%d (of %d CPUs)", m.settings.MaxWorkers, cpuCount)
+	}
+	if m.settingsCursor == 2 {
+		content.WriteString(styles.SelectedItem.Render(fmt.Sprintf("  %s: %s", workersLabel, workersValue)))
+	} else {
+		content.WriteString(styles.NormalItem.Render(fmt.Sprintf("  %s: %s", workersLabel, workersValue)))
+	}
+	content.WriteString("\n")
+	desc1 := fmt.Sprintf("      Concurrent compilation processes")
+	desc2 := fmt.Sprintf("      (0 = all %d CPUs, 2-4 for limited resources)", cpuCount)
+	content.WriteString(styles.SubtleText.Render(desc1))
+	content.WriteString("\n")
+	content.WriteString(styles.SubtleText.Render(desc2))
 
 	b.WriteString(box.Render(content.String()))
 
@@ -370,11 +456,15 @@ func (m Model) renderSettings() string {
 	b.WriteString(styles.SubtleText.Render("  Config: ~/.config/autoscan/settings.yaml"))
 
 	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+	helpItems := []components.HelpItem{
 		{"↑/↓", "navigate"},
 		{"space/enter", "toggle"},
-		{"esc", "back"},
-	}))
+	}
+	if m.settingsCursor == 2 {
+		helpItems = append(helpItems, components.HelpItem{"+/-", "adjust"}, components.HelpItem{"0", "reset to all CPUs"})
+	}
+	helpItems = append(helpItems, components.HelpItem{"esc", "back"})
+	b.WriteString(components.RenderHelpBar(helpItems))
 
 	return b.String()
 }

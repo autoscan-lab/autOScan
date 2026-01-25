@@ -2,3 +2,4 @@
 
 short_names: true
 keep_binaries: true
+max_workers: 0  # 0 = use all CPUs, set to 2-4 for resource-constrained environments

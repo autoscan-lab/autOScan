@@ -1,4 +1,4 @@
-name: S7-sems
+name: Lab-7
 root: .
 discover:
     leaf_submission: true
@@ -8,6 +8,7 @@ compile:
     flags:
         - -Wall
         - -Wextra
+        - -lm
 run:
     multi_process:
         enabled: true
@@ -37,5 +38,3 @@ run:
                     - central.c
               process_inputs:
                 Central: 3\n1\n1\n1\n1\n1\n9\n
-library_files:
-    - semaphore_v2.h

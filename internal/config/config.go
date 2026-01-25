@@ -20,13 +20,16 @@ type Settings struct {
 	ShortNames bool `yaml:"short_names"`
 	// KeepBinaries controls whether compiled binaries are deleted after grading
 	KeepBinaries bool `yaml:"keep_binaries"`
+	// MaxWorkers limits concurrent compilation processes (0 = use all CPUs)
+	MaxWorkers int `yaml:"max_workers"`
 }
 
 // DefaultSettings returns default settings
 func DefaultSettings() Settings {
 	return Settings{
-		ShortNames: true,
+		ShortNames:   true,
 		KeepBinaries: false,
+		MaxWorkers:   0, // 0 = use all CPUs
 	}
 }
 

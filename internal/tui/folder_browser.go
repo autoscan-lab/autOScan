@@ -184,11 +184,6 @@ func (fb *FolderBrowser) Selected() string {
 	return fb.selected
 }
 
-// CurrentPath returns the current path being browsed
-func (fb *FolderBrowser) CurrentPath() string {
-	return fb.currentPath
-}
-
 // View renders the folder browser
 func (fb *FolderBrowser) View() string {
 	var b strings.Builder
@@ -271,11 +266,6 @@ func (fb *FolderBrowser) View() string {
 	}
 
 	return b.String()
-}
-
-// SetVisibleRows sets how many rows to display
-func (fb *FolderBrowser) SetVisibleRows(rows int) {
-	fb.visibleRows = rows
 }
 
 // Reset resets the browser to start path

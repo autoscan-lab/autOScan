@@ -1,4 +1,4 @@
-name: S2-threads
+name: Lab-2
 root: .
 discover:
     leaf_submission: true
@@ -8,16 +8,9 @@ compile:
     flags:
         - -Wall
         - -Wextra
+        - -lpthread
     source_file: S2.c
 run:
     test_cases:
         - name: No args
           expected_exit: 0
-        - name: 3 Patients & 2 Doctors
-          args:
-            - "3"
-            - "2"
-          expected_exit: 0
-library_files:
-    - Hospital.h
-    - Hospital.o

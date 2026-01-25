@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,17 +30,10 @@ type Executor struct {
 	shortNames   bool
 }
 
-func NewExecutor(p *policy.Policy, binaryDir string) *Executor {
-	return NewExecutorWithOptions(p, binaryDir, false)
-}
-
 func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool) *Executor {
 	outputName := strings.TrimSuffix(p.Compile.SourceFile, ".c")
 	if outputName == "" {
 		outputName = p.Compile.Output
-		if outputName == "" {
-			outputName = "a.out"
-		}
 	}
 
 	home, _ := os.UserHomeDir()
@@ -117,24 +111,8 @@ func (e *Executor) ExecuteAllTestCases(ctx context.Context, sub domain.Submissio
 	return results
 }
 
-func (e *Executor) BinaryExists(sub domain.Submission) bool {
-	_, err := os.Stat(e.GetBinaryPath(sub))
-	return err == nil
-}
-
 func (e *Executor) HasMultiProcess() bool {
 	return e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled
-}
-
-func (e *Executor) GetMultiProcessConfig() *policy.MultiProcessConfig {
-	return e.policy.Run.MultiProcess
-}
-
-func (e *Executor) GetTestScenarios() []policy.MultiProcessScenario {
-	if e.policy.Run.MultiProcess == nil {
-		return nil
-	}
-	return e.policy.Run.MultiProcess.TestScenarios
 }
 
 func (e *Executor) resolveTestFilePaths(args []string) []string {
@@ -233,6 +211,13 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 			binaryDir := e.GetSubmissionBinaryDir(sub)
 			binaryPath := filepath.Join(binaryDir, strings.TrimSuffix(proc.SourceFile, ".c"))
 
+			if _, err := os.Stat(binaryPath); err != nil {
+				procResult.Running = false
+				procResult.ExitCode = -1
+				procResult.Stderr = fmt.Sprintf("Binary not found: %s (compilation may have failed)", binaryPath)
+				return
+			}
+
 			cmd := exec.CommandContext(ctx, binaryPath, args...)
 			cmd.Dir = binaryDir
 			if input != "" {
@@ -260,6 +245,15 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 			var stdoutDone, stderrDone sync.WaitGroup
 			stdoutDone.Add(1)
 			stderrDone.Add(1)
+
+			go func() {
+				<-ctx.Done()
+				if cmd.Process != nil {
+					cmd.Process.Kill()
+				}
+				stdoutPipe.Close()
+				stderrPipe.Close()
+			}()
 
 			go func() {
 				defer stdoutDone.Done()
@@ -307,10 +301,24 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				}
 			}()
 
-			stdoutDone.Wait()
-			stderrDone.Wait()
+			done := make(chan error, 1)
+			go func() {
+				stdoutDone.Wait()
+				stderrDone.Wait()
+				done <- cmd.Wait()
+			}()
 
-			err := cmd.Wait()
+			var err error
+			select {
+			case err = <-done:
+			case <-ctx.Done():
+				if cmd.Process != nil {
+					cmd.Process.Kill()
+				}
+				err = <-done
+				procResult.Killed = true
+			}
+
 			procResult.FinishedAt = time.Now()
 			procResult.Duration = procResult.FinishedAt.Sub(procResult.StartedAt)
 			procResult.Running = false

@@ -304,7 +304,7 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
-		if m.settingsCursor < 1 {
+		if m.settingsCursor < 2 {
 			m.settingsCursor++
 		}
 	case "k", "up":
@@ -319,6 +319,25 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settings.KeepBinaries = !m.settings.KeepBinaries
 		}
 		config.SaveSettings(m.settings)
+	case "+", "=":
+		if m.settingsCursor == 2 {
+			if m.settings.MaxWorkers < 32 {
+				m.settings.MaxWorkers++
+				config.SaveSettings(m.settings)
+			}
+		}
+	case "-", "_":
+		if m.settingsCursor == 2 {
+			if m.settings.MaxWorkers > 0 {
+				m.settings.MaxWorkers--
+				config.SaveSettings(m.settings)
+			}
+		}
+	case "0":
+		if m.settingsCursor == 2 {
+			m.settings.MaxWorkers = 0
+			config.SaveSettings(m.settings)
+		}
 	case "q", "esc":
 		m.currentView = ViewHome
 	}
@@ -897,6 +916,11 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 
 			// Pass short names setting to compiler
 			opts = append(opts, engine.WithShortNames(shortNames))
+
+			// Limit workers if configured
+			if m.settings.MaxWorkers > 0 {
+				opts = append(opts, engine.WithWorkers(m.settings.MaxWorkers))
+			}
 
 			runner, err := engine.NewRunner(selectedPolicy, opts...)
 			if err != nil {

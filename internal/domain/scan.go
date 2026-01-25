@@ -26,5 +26,4 @@ func NewScanResult(hits []BannedHit, parseErrors []string) ScanResult {
 	return ScanResult{Hits: hits, HitsByFunction: byFunc, ParseErrors: parseErrors}
 }
 
-func (s ScanResult) TotalHits() int      { return len(s.Hits) }
-func (s ScanResult) UniqueFunctions() int { return len(s.HitsByFunction) }
+func (s ScanResult) TotalHits() int { return len(s.Hits) }

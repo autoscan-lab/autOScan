@@ -22,19 +22,18 @@ const (
 )
 
 type CompileEngine struct {
-	policy     *policy.Policy
-	timeout    time.Duration
-	workers    int
-	tempDir    string
-	outputDir  string
-	shortNames bool
+	policy         *policy.Policy
+	timeout        time.Duration
+	workers        int
+	tempDir        string
+	outputDir      string
+	shortNames     bool
+	cachedLibFiles []string
+	cachedLibDir   string
+	cachedLibWarn  []string
 }
 
 type CompileOption func(*CompileEngine)
-
-func WithTimeout(d time.Duration) CompileOption {
-	return func(e *CompileEngine) { e.timeout = d }
-}
 
 func WithWorkers(n int) CompileOption {
 	return func(e *CompileEngine) { e.workers = n }
@@ -79,11 +78,6 @@ func (e *CompileEngine) Cleanup() error {
 	return nil
 }
 
-type compileJob struct {
-	submission domain.Submission
-	result     domain.CompileResult
-}
-
 func (e *CompileEngine) CompileAll(ctx context.Context, submissions []domain.Submission, onComplete func(domain.Submission, domain.CompileResult)) []domain.CompileResult {
 	results := make([]domain.CompileResult, len(submissions))
 
@@ -117,10 +111,6 @@ func (e *CompileEngine) CompileAll(ctx context.Context, submissions []domain.Sub
 
 	wg.Wait()
 	return results
-}
-
-func (e *CompileEngine) Compile(ctx context.Context, sub domain.Submission) domain.CompileResult {
-	return e.compile(ctx, sub)
 }
 
 func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) domain.CompileResult {
@@ -162,9 +152,6 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		outputName = strings.TrimSuffix(e.policy.Compile.SourceFile, ".c")
 	} else {
 		outputName = e.policy.Compile.Output
-		if outputName == "" {
-			outputName = "a.out"
-		}
 		sourceFiles = make([]string, len(sub.CFiles))
 		for i, f := range sub.CFiles {
 			sourceFiles[i] = filepath.Join(sub.Path, f)
@@ -221,6 +208,10 @@ func (e *CompileEngine) resolveLibraryFiles() ([]string, string, []string) {
 		return nil, "", nil
 	}
 
+	if e.cachedLibFiles != nil {
+		return e.cachedLibFiles, e.cachedLibDir, e.cachedLibWarn
+	}
+
 	home, _ := os.UserHomeDir()
 	libDir := filepath.Join(home, ".config", "autoscan", "libraries")
 
@@ -253,6 +244,10 @@ func (e *CompileEngine) resolveLibraryFiles() ([]string, string, []string) {
 
 		libraryFiles = append(libraryFiles, fullPath)
 	}
+
+	e.cachedLibFiles = libraryFiles
+	e.cachedLibDir = libDir
+	e.cachedLibWarn = warnings
 
 	return libraryFiles, libDir, warnings
 }
@@ -289,19 +284,10 @@ func (e *CompileEngine) compileMultiProcess(ctx context.Context, sub domain.Subm
 		binaryName := strings.TrimSuffix(proc.SourceFile, ".c")
 		outputPath := filepath.Join(outputDir, binaryName)
 
-		args := append([]string{}, e.policy.Compile.Flags...)
+		args := e.policy.BuildGCCArgs([]string{sourceFile}, libraryFiles, outputPath)
 		if libDir != "" {
-			args = append(args, "-I", libDir)
+			args = append([]string{"-I", libDir}, args...)
 		}
-		args = append(args, sourceFile)
-
-		for _, libFile := range libraryFiles {
-			ext := filepath.Ext(libFile)
-			if ext == ".c" || ext == ".o" {
-				args = append(args, libFile)
-			}
-		}
-		args = append(args, "-o", outputPath)
 
 		timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
 		cmd := exec.CommandContext(timeoutCtx, e.policy.Compile.GCC, args...)

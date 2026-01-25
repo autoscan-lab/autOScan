@@ -12,30 +12,22 @@ const Version = "2.0.0"
 var (
 	// Primary colors
 	Primary     = lipgloss.Color("#3B82F6") // Blue - main accent
-	PrimaryDim  = lipgloss.Color("#1D4ED8") // Darker blue for backgrounds
 	PrimaryGlow = lipgloss.Color("#60A5FA") // Lighter blue for highlights
 
 	// Secondary/Accent colors
-	Accent    = lipgloss.Color("#06B6D4") // Cyan - secondary accent
-	AccentDim = lipgloss.Color("#0891B2") // Darker cyan
+	Accent = lipgloss.Color("#06B6D4") // Cyan - secondary accent
 
 	// Semantic colors
 	Success = lipgloss.Color("#22C55E") // Green
 	Warning = lipgloss.Color("#F59E0B") // Amber
 	Error   = lipgloss.Color("#EF4444") // Red
-	Danger  = lipgloss.Color("#EF4444") // Red (alias)
 
 	// Neutral colors
-	Muted       = lipgloss.Color("#6B7280") // Gray for subtle text
-	SubtleColor = lipgloss.Color("#9CA3AF") // Lighter gray
-	Text        = lipgloss.Color("#E5E7EB") // Main text
-	TextBright  = lipgloss.Color("#F9FAFB") // Bright text
+	Muted = lipgloss.Color("#6B7280") // Gray for subtle text
+	Text  = lipgloss.Color("#E5E7EB") // Main text
 
 	// Background colors
-	BgDark     = lipgloss.Color("#0F172A") // Darkest background
-	BgPanel    = lipgloss.Color("#1E293B") // Panel background
-	BgHover    = lipgloss.Color("#334155") // Hover/selected background
-	BgHighlight = lipgloss.Color("#1E3A5F") // Highlighted items
+	BgPanel = lipgloss.Color("#1E293B") // Panel background
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,11 +57,7 @@ var (
 )
 
 // Aliases for backward compatibility
-var (
-	ErrorStyle   = ErrorText
-	WarningStyle = WarningText
-	SuccessStyle = SuccessText
-)
+var ErrorStyle = ErrorText
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interactive Item Styles
@@ -83,11 +71,6 @@ var (
 
 	// NormalItem for non-selected list items
 	NormalItem = lipgloss.NewStyle().
-			Foreground(Text)
-
-	// HoveredItem for items under cursor but not selected
-	HoveredItem = lipgloss.NewStyle().
-			Background(BgHover).
 			Foreground(Text)
 )
 
@@ -137,15 +120,6 @@ func BoxStyle(width int) lipgloss.Style {
 		Width(width)
 }
 
-// AccentBoxStyle creates a box with accent-colored border
-func AccentBoxStyle(width int) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(Primary).
-		Padding(1, 2).
-		Width(width)
-}
-
 // WarningBoxStyle creates a box with warning-colored border
 func WarningBoxStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
@@ -159,59 +133,20 @@ func WarningBoxStyle(width int) lipgloss.Style {
 // Header Styles
 // ─────────────────────────────────────────────────────────────────────────────
 
-var (
-	// HeaderStyle for page/section headers
-	HeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(Primary).
-			Padding(1, 2)
-
-	// TitleStyle for major titles
-	TitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(PrimaryGlow)
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Status Indicator Styles
-// ─────────────────────────────────────────────────────────────────────────────
-
-var (
-	// StatusClean for clean/passing items
-	StatusClean = lipgloss.NewStyle().
-			Foreground(Success).
-			Bold(true)
-
-	// StatusWarning for items with warnings
-	StatusWarning = lipgloss.NewStyle().
-			Foreground(Warning).
-			Bold(true)
-
-	// StatusError for failed/error items
-	StatusError = lipgloss.NewStyle().
-			Foreground(Error).
-			Bold(true)
-
-	// StatusMuted for pending/inactive items
-	StatusMuted = lipgloss.NewStyle().
-			Foreground(Muted)
-)
+// HeaderStyle for page/section headers
+var HeaderStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(Primary).
+	Padding(1, 2)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logo Style
 // ─────────────────────────────────────────────────────────────────────────────
 
-var (
-	// LogoStyle for the main application logo
-	LogoStyle = lipgloss.NewStyle().
-			Foreground(Primary).
-			Bold(true)
-
-	// LogoAccentStyle for accent parts of logo
-	LogoAccentStyle = lipgloss.NewStyle().
-			Foreground(Accent).
-			Bold(true)
-)
+// LogoStyle for the main application logo
+var LogoStyle = lipgloss.NewStyle().
+	Foreground(Primary).
+	Bold(true)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Animation Frame Colors (for eye animation)

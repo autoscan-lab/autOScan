@@ -17,16 +17,12 @@ func Run() error {
 	autoInstall()
 
 	// Parse command line flags
-	var (
-		policyPath = flag.String("policy", "", "Path to policy YAML file")
-		rootPath   = flag.String("root", ".", "Root folder containing submissions")
-	)
+	rootPath := flag.String("root", ".", "Root folder containing submissions")
 	flag.Parse()
 
 	// Create TUI config
 	cfg := tui.Config{
-		PolicyPath: *policyPath,
-		Root:       *rootPath,
+		Root: *rootPath,
 	}
 
 	return tui.Start(cfg)

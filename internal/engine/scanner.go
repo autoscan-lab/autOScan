@@ -36,32 +36,16 @@ func NewScanEngine(p *policy.Policy) *ScanEngine {
 	}
 }
 
-// Scan scans a submission for banned function calls.
-func (e *ScanEngine) Scan(sub domain.Submission) domain.ScanResult {
-	var allHits []domain.BannedHit
-	var parseErrors []string
-
-	for _, cFile := range sub.CFiles {
-		filePath := filepath.Join(sub.Path, cFile)
-		hits, err := e.scanFile(filePath, cFile)
-		if err != nil {
-			parseErrors = append(parseErrors, cFile+": "+err.Error())
-			continue
-		}
-		allHits = append(allHits, hits...)
-	}
-
-	return domain.NewScanResult(allHits, parseErrors)
-}
-
 // ScanAll scans all submissions in parallel.
 func (e *ScanEngine) ScanAll(submissions []domain.Submission, onComplete func(domain.Submission, domain.ScanResult)) []domain.ScanResult {
 	results := make([]domain.ScanResult, len(submissions))
 
-	// Use worker pool for parallel scanning
 	numWorkers := runtime.NumCPU()
 	if numWorkers > len(submissions) {
 		numWorkers = len(submissions)
+	}
+	if numWorkers > 8 {
+		numWorkers = 8
 	}
 	if numWorkers == 0 {
 		return results
@@ -135,29 +119,6 @@ func (e *ScanEngine) scanFileWithParser(parser *sitter.Parser, filePath, display
 
 	var hits []domain.BannedHit
 	lines := strings.Split(string(content), "\n")
-	e.walkTree(tree.RootNode(), content, lines, displayName, &hits)
-
-	return hits, nil
-}
-
-func (e *ScanEngine) scanFile(filePath, displayName string) ([]domain.BannedHit, error) {
-	// Read file
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse with tree-sitter
-	tree, err := e.parser.ParseCtx(context.Background(), nil, content)
-	if err != nil {
-		return nil, err
-	}
-	defer tree.Close()
-
-	// Extract function calls
-	var hits []domain.BannedHit
-	lines := strings.Split(string(content), "\n")
-
 	e.walkTree(tree.RootNode(), content, lines, displayName, &hits)
 
 	return hits, nil

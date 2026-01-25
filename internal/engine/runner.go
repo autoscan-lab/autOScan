@@ -19,7 +19,6 @@ type Runner struct {
 // RunnerCallbacks allows the TUI to receive progress updates.
 type RunnerCallbacks struct {
 	OnDiscoveryComplete func(submissions []domain.Submission)
-	OnCompileStart      func(sub domain.Submission)
 	OnCompileComplete   func(sub domain.Submission, result domain.CompileResult)
 	OnScanComplete      func(sub domain.Submission, result domain.ScanResult)
 	OnAllComplete       func(report domain.RunReport)
@@ -99,9 +98,4 @@ func (r *Runner) Run(ctx context.Context, root string, callbacks RunnerCallbacks
 	}
 
 	return &report, nil
-}
-
-// GetSubmissions returns discovered submissions without running the full pipeline.
-func (r *Runner) GetSubmissions(root string) ([]domain.Submission, error) {
-	return r.discovery.Discover(root)
 }
