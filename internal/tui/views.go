@@ -182,7 +182,6 @@ func (m Model) renderPolicySelect() string {
 
 		var list strings.Builder
 
-		// Header with count
 		list.WriteString(styles.SubtleText.Render(fmt.Sprintf("Available policies: %d", len(m.policies))))
 		list.WriteString("\n\n")
 
@@ -193,7 +192,6 @@ func (m Model) renderPolicySelect() string {
 
 		b.WriteString(box.Render(list.String()))
 
-		// Separate details panel for selected policy
 		if m.selectedPolicy < len(m.policies) {
 			b.WriteString("\n\n")
 
@@ -209,18 +207,15 @@ func (m Model) renderPolicySelect() string {
 			details.WriteString(styles.Highlight.Render("Policy Details"))
 			details.WriteString("\n\n")
 
-			// Policy name
 			details.WriteString(styles.SubtleText.Render("  Name:     "))
 			details.WriteString(p.Name)
 			details.WriteString("\n")
 
-			// File path
 			relPath, _ := filepath.Rel(".", p.FilePath)
 			details.WriteString(styles.SubtleText.Render("  File:     "))
 			details.WriteString(filepath.Base(relPath))
 			details.WriteString("\n")
 
-			// Mode indicator
 			isMultiProcess := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
 			details.WriteString(styles.SubtleText.Render("  Mode:     "))
 			if isMultiProcess {
@@ -230,7 +225,6 @@ func (m Model) renderPolicySelect() string {
 			}
 			details.WriteString("\n")
 
-			// Compiler flags
 			details.WriteString(styles.SubtleText.Render("  Flags:    "))
 			if len(p.Compile.Flags) > 0 {
 				details.WriteString(strings.Join(p.Compile.Flags, " "))
@@ -239,14 +233,12 @@ func (m Model) renderPolicySelect() string {
 			}
 			details.WriteString("\n")
 
-			// Required files
 			if len(p.RequiredFiles) > 0 {
 				details.WriteString(styles.SubtleText.Render("  Required: "))
 				details.WriteString(strings.Join(p.RequiredFiles, ", "))
 				details.WriteString("\n")
 			}
 
-			// Library files
 			if len(p.LibraryFiles) > 0 {
 				details.WriteString(styles.SubtleText.Render("  Libraries:"))
 				details.WriteString(strings.Join(p.LibraryFiles, ", "))
@@ -256,7 +248,6 @@ func (m Model) renderPolicySelect() string {
 			details.WriteString("\n")
 
 			if isMultiProcess {
-				// Multi-process details
 				mp := p.Run.MultiProcess
 				details.WriteString(styles.PrimaryText.Render("  Executables"))
 				details.WriteString("\n")
@@ -283,7 +274,6 @@ func (m Model) renderPolicySelect() string {
 					}
 				}
 			} else {
-				// Single process details
 				if p.Compile.SourceFile != "" {
 					details.WriteString(styles.SubtleText.Render("  Source:   "))
 					details.WriteString(p.Compile.SourceFile)
@@ -552,7 +542,6 @@ func (m Model) renderSubmissions() string {
 
 	b.WriteString("\n")
 
-	// Table
 	tableBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Muted).
@@ -560,7 +549,6 @@ func (m Model) renderSubmissions() string {
 
 	var table strings.Builder
 
-	// Column widths - responsive based on terminal width
 	const (
 		colStatus  = 5 // [OK], [!], [X], [~] + space
 		colCompile = 10
@@ -574,15 +562,13 @@ func (m Model) renderSubmissions() string {
 		colSubmission = 30
 	}
 	if colSubmission > 80 {
-		colSubmission = 80 // Cap to prevent overly wide names
+		colSubmission = 80
 	}
 
-	// Table header
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(styles.Primary)
 
-	// Header: "  " cursor + status + submission + compile + banned + grade
 	table.WriteString(headerStyle.Render(fmt.Sprintf("  %-*s %-*s  %-*s  %-*s  %-*s",
 		colStatus, "",
 		colSubmission, "Submission",
@@ -593,7 +579,6 @@ func (m Model) renderSubmissions() string {
 	table.WriteString(strings.Repeat("─", 2+colStatus+1+colSubmission+2+colCompile+2+colBanned+2+colGrade))
 	table.WriteString("\n")
 
-	// Results list
 	filtered := m.filteredResults()
 
 	if len(filtered) == 0 && !m.isRunning {
@@ -609,7 +594,6 @@ func (m Model) renderSubmissions() string {
 	for i := m.scrollOffset; i < endIdx; i++ {
 		r := filtered[i]
 
-		// Cursor indicator
 		var cursor string
 		if i == m.cursor {
 			cursor = styles.Highlight.Render("▶ ")
@@ -617,7 +601,6 @@ func (m Model) renderSubmissions() string {
 			cursor = "  "
 		}
 
-		// Status icon
 		var statusText string
 		var statusStyled string
 		switch r.Status {
@@ -642,7 +625,6 @@ func (m Model) renderSubmissions() string {
 		// Pad status to fixed width
 		statusPadding := strings.Repeat(" ", max(0, colStatus-lipgloss.Width(statusText)))
 
-		// Truncate ID if needed 
 		id := r.Submission.ID
 		if m.settings.ShortNames {
 			if idx := strings.Index(id, "_"); idx > 0 {
@@ -658,10 +640,8 @@ func (m Model) renderSubmissions() string {
 			}
 			id = string(runes) + "..."
 		}
-		// Pad ID to fixed width
 		idPadding := strings.Repeat(" ", max(0, colSubmission-lipgloss.Width(id)))
 
-		// Compile status
 		var compileText, compileStyled string
 		if r.Compile.TimedOut {
 			compileText = "TIMEOUT"
@@ -673,10 +653,8 @@ func (m Model) renderSubmissions() string {
 			compileText = "OK"
 			compileStyled = styles.SuccessText.Render(compileText)
 		}
-		// Pad compile to fixed width
 		compilePadding := strings.Repeat(" ", colCompile-len(compileText))
 
-		// Banned count
 		var bannedText, bannedStyled string
 		if r.Scan.TotalHits() > 0 {
 			bannedText = fmt.Sprintf("%d", r.Scan.TotalHits())
@@ -688,10 +666,8 @@ func (m Model) renderSubmissions() string {
 			bannedText = "-"
 			bannedStyled = bannedText
 		}
-		// Pad banned to fixed width
 		bannedPadding := strings.Repeat(" ", colBanned-len(bannedText))
 
-		// Provisional Grade
 		var gradeText, gradeStyled string
 		if !r.Compile.OK || r.Compile.TimedOut || r.Scan.TotalHits() > 0 {
 			gradeText = "2"
@@ -701,7 +677,6 @@ func (m Model) renderSubmissions() string {
 			gradeStyled = styles.SuccessText.Render(gradeText)
 		}
 
-		// Build row: cursor + status + padding + id + padding + compile + padding + banned + padding + grade
 		table.WriteString(fmt.Sprintf("%s%s%s %s%s  %s%s  %s%s  %s\n",
 			cursor,
 			statusStyled, statusPadding,
@@ -711,7 +686,6 @@ func (m Model) renderSubmissions() string {
 			gradeStyled))
 	}
 
-	// Scroll indicator
 	if len(filtered) > m.visibleRows {
 		table.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  Showing %d-%d of %d",
 			m.scrollOffset+1, endIdx, len(filtered))))
@@ -732,22 +706,6 @@ func (m Model) renderSubmissions() string {
 	return b.String()
 }
 
-func (m Model) renderSummary() string {
-	if m.report == nil {
-		return ""
-	}
-
-	s := m.report.Summary
-	var parts []string
-
-	parts = append(parts, fmt.Sprintf("Total: %d", s.TotalSubmissions))
-	parts = append(parts, styles.SuccessText.Render(fmt.Sprintf("Clean: %d", s.CleanSubmissions)))
-	parts = append(parts, styles.WarningText.Render(fmt.Sprintf("Banned: %d", s.SubmissionsWithBanned)))
-	parts = append(parts, styles.ErrorText.Render(fmt.Sprintf("Failed: %d", s.CompileFail)))
-
-	return "  " + strings.Join(parts, "  •  ")
-}
-
 func (m Model) renderDetails() string {
 	var b strings.Builder
 
@@ -766,7 +724,6 @@ func (m Model) renderDetails() string {
 	b.WriteString(header.Render(r.Submission.ID))
 	b.WriteString("\n")
 
-	// Tabs
 	tabs := []string{"Compile", "Banned", "Files", "Run"}
 	var tabRow strings.Builder
 	tabRow.WriteString("  ")
@@ -781,7 +738,6 @@ func (m Model) renderDetails() string {
 	b.WriteString(tabRow.String())
 	b.WriteString("\n\n")
 
-	// Content box with border - use full width
 	contentWidth := m.width - 8
 	if contentWidth < 80 {
 		contentWidth = 80
@@ -808,16 +764,15 @@ func (m Model) renderDetails() string {
 
 	b.WriteString("\n\n")
 
-	// Show different help based on tab
 	switch m.detailsTab {
-	case 1: // Banned tab
+	case 1:
 		b.WriteString(components.RenderHelpBar([]components.HelpItem{
 			{Key: "tab", Desc: "switch tabs"},
 			{Key: "↑/↓", Desc: "navigate"},
 			{Key: "enter", Desc: "expand/collapse"},
 			{Key: "esc", Desc: "back"},
 		}))
-	case 3: // Run tab
+	case 3:
 		helpItems := []components.HelpItem{
 			{Key: "tab", Desc: "switch tabs"},
 			{Key: "↑/↓", Desc: "navigate"},
@@ -845,13 +800,11 @@ func (m Model) renderDetails() string {
 func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	var b strings.Builder
 
-	// Calculate available width (accounting for padding in content box)
-	availableWidth := m.width - 12 // Account for box padding and margins
+	availableWidth := m.width - 12
 	if availableWidth < 60 {
 		availableWidth = 60
 	}
 
-	// Compile status - NO EMOJIS
 	if r.Compile.OK {
 		b.WriteString(styles.SuccessText.Render("[PASS] Compilation successful"))
 	} else if r.Compile.TimedOut {
@@ -861,11 +814,9 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	}
 	b.WriteString("\n\n")
 
-	// Command - truncate paths to filenames for readability
 	b.WriteString(styles.SubtleText.Render("Command:"))
 	b.WriteString("\n")
 	if len(r.Compile.Command) > 0 {
-		// Truncate paths in command to just filenames
 		var truncatedCmd []string
 		for _, arg := range r.Compile.Command {
 			truncatedCmd = append(truncatedCmd, truncatePathToFilename(arg))
@@ -876,17 +827,14 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 		b.WriteString("\n")
 	}
 
-	// Output/Error - truncate paths for readability
 	if r.Compile.Stderr != "" {
 		b.WriteString("\n")
 		b.WriteString(styles.SubtleText.Render("Output:"))
 		b.WriteString("\n")
-		// Truncate paths in stderr output
 		truncatedStderr := truncatePathsInText(r.Compile.Stderr)
 		lines := strings.Split(truncatedStderr, "\n")
 		start := m.detailScroll
-		// Show more lines now that we have responsive width
-		visibleLines := (m.height - 20) // Leave room for header, tabs, hints
+		visibleLines := (m.height - 20)
 		if visibleLines < 15 {
 			visibleLines = 15
 		}
@@ -897,12 +845,10 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 		if start >= len(lines) {
 			start = 0
 		}
-		
-		// Wrap each line if needed
+
 		lineStyle := lipgloss.NewStyle().Width(availableWidth)
 		for i := start; i < end; i++ {
 			line := lines[i]
-			// Use lipgloss to wrap long lines
 			wrapped := lineStyle.Render(line)
 			b.WriteString(wrapped)
 			b.WriteString("\n")
@@ -981,30 +927,21 @@ func (m Model) renderBannedTab(r domain.SubmissionResult) string {
 	b.WriteString(styles.WarningText.Render(fmt.Sprintf("[!] %d banned call(s) found", r.Scan.TotalHits())))
 	b.WriteString("\n\n")
 
-	// Get sorted function names
 	var funcNames []string
 	for fn := range r.Scan.HitsByFunction {
 		funcNames = append(funcNames, fn)
 	}
 	sort.Strings(funcNames)
 
-	// Clamp cursor
-	if m.bannedCursor >= len(funcNames) && len(funcNames) > 0 {
-		// m.bannedCursor = len(funcNames) - 1
-	}
-
-	// Render functions with expandable details
 	for i, fn := range funcNames {
 		hits := r.Scan.HitsByFunction[fn]
 		expanded := m.expandedFuncs != nil && m.expandedFuncs[fn]
 
-		// Expand/collapse arrow
 		arrow := "[+]"
 		if expanded {
 			arrow = "[-]"
 		}
 
-		// Build the complete line for this function header
 		var line string
 		if i == m.bannedCursor {
 			line = "> " + styles.Highlight.Render(fmt.Sprintf("%s %s (%d)", arrow, fn, len(hits)))
@@ -1014,7 +951,6 @@ func (m Model) renderBannedTab(r domain.SubmissionResult) string {
 		b.WriteString(line)
 		b.WriteString("\n")
 
-		// Show hits if expanded (max 5)
 		if expanded {
 			showMax := 5
 			maxLineWidth := 65
@@ -1068,7 +1004,6 @@ func (m Model) renderFilesTab(r domain.SubmissionResult) string {
 func (m Model) renderRunTab(r domain.SubmissionResult) string {
 	var b strings.Builder
 
-	// Check if compilation succeeded
 	if !r.Compile.OK {
 		b.WriteString(styles.ErrorText.Render("[!] Cannot run - compilation failed"))
 		b.WriteString("\n\n")
@@ -1076,7 +1011,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		return b.String()
 	}
 
-	// Check if KeepBinaries is enabled
 	if !m.settings.KeepBinaries {
 		b.WriteString(styles.WarningText.Render("[!] Binaries not available"))
 		b.WriteString("\n\n")
@@ -1084,7 +1018,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		return b.String()
 	}
 
-	// Check if multi-process mode is enabled
 	isMultiProcess := false
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		mp := m.policies[m.selectedPolicy].Run.MultiProcess
@@ -1093,7 +1026,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		}
 	}
 
-	// Show executing spinner for single-process only (multi-process shows streaming grid)
 	if m.isExecuting && !isMultiProcess {
 		b.WriteString(m.spinner.View())
 		b.WriteString(" Running...")
@@ -1103,16 +1035,12 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 	}
 
 	if isMultiProcess {
-		// ══════════════════════════════════════════════════════════════════════
-		// MULTI-PROCESS MODE - Only show multi-process execution options
-		// ══════════════════════════════════════════════════════════════════════
 		mp := m.policies[m.selectedPolicy].Run.MultiProcess
 
 		b.WriteString(styles.Subtle.Render("Multi-Process Mode"))
 		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d processes)", len(mp.Executables))))
 		b.WriteString("\n\n")
 
-		// List the configured processes
 		for _, proc := range mp.Executables {
 			b.WriteString(fmt.Sprintf("  • %s (%s)", proc.Name, proc.SourceFile))
 			if proc.StartDelayMs > 0 {
@@ -1121,7 +1049,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 			b.WriteString("\n")
 		}
 
-		// Run with defaults option (navigable)
 		b.WriteString("\n")
 		if m.runInputFocused == 0 {
 			b.WriteString(styles.Highlight.Render("> "))
@@ -1132,7 +1059,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		}
 		b.WriteString("\n")
 
-		// Show test scenarios if available (navigable)
 		if len(mp.TestScenarios) > 0 {
 			b.WriteString("\n")
 			b.WriteString(styles.Subtle.Render("Test Scenarios"))
@@ -1150,21 +1076,14 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 			}
 		}
 
-		// Show multi-process results if available
 		if m.showMultiProcess && m.multiProcessResult != nil {
 			b.WriteString("\n")
 			b.WriteString(m.renderMultiProcessGrid())
 		}
 	} else {
-		// ══════════════════════════════════════════════════════════════════════
-		// SINGLE-PROCESS MODE - Show custom execution and test cases
-		// ══════════════════════════════════════════════════════════════════════
-
-		// Custom execution section
 		b.WriteString(styles.Subtle.Render("Custom Execution"))
 		b.WriteString("\n\n")
 
-		// Arguments input
 		argsLabel := "  Arguments: "
 		if m.runInputFocused == 0 {
 			argsLabel = styles.Highlight.Render("> ") + "Arguments: "
@@ -1173,7 +1092,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		b.WriteString(m.runArgsInput.View())
 		b.WriteString("\n")
 
-		// Stdin input
 		stdinLabel := "  Stdin:     "
 		if m.runInputFocused == 1 {
 			stdinLabel = styles.Highlight.Render("> ") + "Stdin:     "
@@ -1182,7 +1100,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		b.WriteString(m.runStdinInput.View())
 		b.WriteString("\n\n")
 
-		// Run button
 		if m.runInputFocused == 2 {
 			b.WriteString(styles.Highlight.Render("> "))
 			b.WriteString(styles.SelectedItem.Render("[ Run ]"))
@@ -1192,7 +1109,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 		}
 		b.WriteString("\n")
 
-		// Test cases section (if any defined in policy)
 		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 			testCases := m.policies[m.selectedPolicy].Run.TestCases
 			if len(testCases) > 0 {
@@ -1225,7 +1141,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 			}
 		}
 
-		// Show last result if available
 		if m.runResult != nil {
 			b.WriteString("\n")
 			b.WriteString(styles.Subtle.Render("─── Last Result ───"))
@@ -1233,7 +1148,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 			b.WriteString(m.renderExecuteResult(*m.runResult))
 		}
 
-		// Show test results if available
 		if len(m.runTestResults) > 0 {
 			b.WriteString("\n")
 			b.WriteString(styles.Subtle.Render("─── Test Results ───"))
@@ -1254,7 +1168,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 			}
 			b.WriteString("\n\n")
 
-			// Individual results
 			for _, tr := range m.runTestResults {
 				name := tr.TestCaseName
 				if name == "" {
@@ -1281,7 +1194,6 @@ func (m Model) renderMultiProcessGrid() string {
 
 	var b strings.Builder
 
-	// Header with scenario name if applicable
 	if m.multiProcessResult.ScenarioName != "" {
 		b.WriteString(styles.Subtle.Render(fmt.Sprintf("─── %s ───", m.multiProcessResult.ScenarioName)))
 	} else {
@@ -1290,7 +1202,6 @@ func (m Model) renderMultiProcessGrid() string {
 	b.WriteString("\n")
 	b.WriteString(styles.SubtleText.Render(fmt.Sprintf("Total: %dms", m.multiProcessResult.TotalDuration.Milliseconds())))
 
-	// Status indicator
 	anyRunning := false
 	anyKilled := false
 	for _, pr := range m.multiProcessResult.Processes {
@@ -1316,11 +1227,9 @@ func (m Model) renderMultiProcessGrid() string {
 	}
 	b.WriteString("\n\n")
 
-	// Create grid layout - responsive (2 columns or 1 column)
 	processes := m.multiProcessResult.Order
 	numProcs := len(processes)
 
-	// Calculate scenario count for selection indexing
 	scenarioCount := 0
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		mp := m.policies[m.selectedPolicy].Run.MultiProcess
@@ -1330,24 +1239,16 @@ func (m Model) renderMultiProcessGrid() string {
 	}
 	processStartIdx := 1 + scenarioCount
 
-	// Calculate available width - the content box has:
-	// - Width(m.width - 8) which is TOTAL width including border and padding
-	// - Border takes 2 chars (1 each side)
-	// - Padding(1, 2) takes 4 chars (2 each side)
-	// So actual content area = (m.width - 8) - 2 - 4 = m.width - 14
 	availableWidth := m.width - 14
 	if availableWidth < 40 {
 		availableWidth = 40
 	}
 
-	// Determine if we use 1 or 2 columns based on available width
-	// Minimum column width is 38 (for readable content)
 	minColWidth := 38
-	useTwoColumns := availableWidth >= (minColWidth*2 + 4) // 4 for gap between columns
+	useTwoColumns := availableWidth >= (minColWidth*2 + 4)
 
 	if useTwoColumns {
-		// Two column layout - split available width between columns with gap
-		colWidth := (availableWidth - 4) / 2 // Subtract gap (4 chars for safety)
+		colWidth := (availableWidth - 4) / 2
 
 		for i := 0; i < numProcs; i += 2 {
 			row := m.renderProcessRow(processes, i, colWidth, true, scenarioCount)
@@ -1357,7 +1258,6 @@ func (m Model) renderMultiProcessGrid() string {
 			}
 		}
 	} else {
-		// Single column layout - use full width
 		colWidth := availableWidth
 
 		for i := 0; i < numProcs; i++ {
@@ -1415,7 +1315,7 @@ func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoC
 	return lipgloss.JoinHorizontal(lipgloss.Top, box1, "  ", box2)
 }
 
-func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelected bool, isFocused bool, scrollOffset int) string {
+func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelected, isFocused bool, scrollOffset int) string {
 	borderColor := styles.Muted
 	if isFocused {
 		borderColor = styles.Accent
@@ -1472,7 +1372,6 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 	}
 	content.WriteString("\n")
 
-	// Status line
 	if proc.Running {
 		content.WriteString(styles.Highlight.Render("[RUNNING]"))
 		content.WriteString(styles.SubtleText.Render(" ..."))
@@ -1498,13 +1397,11 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 	}
 	content.WriteString("\n")
 
-	// Write output lines
 	for i := startIdx; i < endIdx; i++ {
 		content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
 		content.WriteString("\n")
 	}
 
-	// Pad with empty lines to reach minimum height
 	currentLines := endIdx - startIdx
 	for i := currentLines; i < minContentLines; i++ {
 		content.WriteString("\n")
@@ -1520,14 +1417,12 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 }
 
 func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
-	// Calculate box width
 	boxWidth := m.width - 14
 	if boxWidth < 40 {
 		boxWidth = 40
 	}
 	contentWidth := boxWidth - 4
 
-	// Determine if focused for scrolling
 	testCaseCount := 0
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
@@ -1549,7 +1444,6 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 
 	var content strings.Builder
 
-	// Header - status line with scroll info on same line
 	if r.TimedOut {
 		content.WriteString(styles.ErrorText.Render("[TIMEOUT] Execution timed out"))
 	} else if r.ExitCode == 0 {
@@ -1579,20 +1473,17 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 	}
 	content.WriteString("\n")
 
-	// Write output lines with consistent height
 	if totalLines > 0 {
 		for i := startIdx; i < endIdx; i++ {
 			content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
 			content.WriteString("\n")
 		}
-		// Pad to maintain consistent height
 		linesShown := endIdx - startIdx
 		for i := linesShown; i < maxShow; i++ {
 			content.WriteString("\n")
 		}
 	} else {
 		content.WriteString(styles.SubtleText.Render("(no output)\n"))
-		// Pad empty output area
 		for i := 1; i < maxShow; i++ {
 			content.WriteString("\n")
 		}
@@ -1619,7 +1510,6 @@ func (m Model) renderExport() string {
 		boxWidth = 60
 	}
 
-	// Format definitions
 	formats := []struct {
 		name string
 		ext  string

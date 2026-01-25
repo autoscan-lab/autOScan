@@ -22,12 +22,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Global quit
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 
-		// View-specific handling
 		switch m.currentView {
 		case ViewHome:
 			return m.updateHome(msg)
@@ -64,9 +62,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.visibleRows < 5 {
 			m.visibleRows = 5
 		}
-		// Update help panel width
 		m.helpPanel.SetWidth(min(28, m.width/4))
-		// Update policy editor width
 		m.policyEditor.SetWidth(m.width)
 
 	case components.AnimationTickMsg:
@@ -128,7 +124,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isExecuting = false
 		m.selectedProcessIdx = -1
 		m.outputScroll = 0
-		// Don't change runInputFocused - keep it on whatever was pressed
 		return m, nil
 
 	case executeTestResultsMsg:
@@ -154,12 +149,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Update spinner
 	var spinnerCmd tea.Cmd
 	m.spinner, spinnerCmd = m.spinner.Update(msg)
 	cmds = append(cmds, spinnerCmd)
 
-	// Update policy editor if in that view
 	if m.currentView == ViewPolicyEditor {
 		cmd := m.policyEditor.Update(msg)
 		cmds = append(cmds, cmd)
@@ -905,7 +898,6 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 		func() tea.Msg {
 			var opts []engine.CompileOption
 
-			// If KeepBinaries is enabled, save to CWD/autoscan_binaries
 			if keepBinaries {
 				cwd, err := os.Getwd()
 				if err == nil {
@@ -914,10 +906,8 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Pass short names setting to compiler
 			opts = append(opts, engine.WithShortNames(shortNames))
 
-			// Limit workers if configured
 			if m.settings.MaxWorkers > 0 {
 				opts = append(opts, engine.WithWorkers(m.settings.MaxWorkers))
 			}
@@ -927,7 +917,6 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 				return errorMsg(err)
 			}
 
-			// Only cleanup binaries if KeepBinaries is false
 			if !keepBinaries {
 				defer runner.Cleanup()
 			}
@@ -1026,7 +1015,6 @@ func (m *Model) getExecutor() *engine.Executor {
 		return nil
 	}
 
-	// Determine binary directory
 	binDir := ""
 	if m.settings.KeepBinaries {
 		cwd, err := os.Getwd()
@@ -1036,7 +1024,6 @@ func (m *Model) getExecutor() *engine.Executor {
 	}
 
 	if binDir == "" {
-		// Fall back to temp directory - but this means we need binaries to exist
 		return nil
 	}
 
@@ -1069,7 +1056,6 @@ func (m *Model) executeSubmission() tea.Cmd {
 		args = strings.Fields(argsStr)
 	}
 
-	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
 	m.runCancelFunc = cancel
 	m.isExecuting = true
