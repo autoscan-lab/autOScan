@@ -85,7 +85,7 @@ autoscan
 
 1. **Run Grader** - Select a policy and grade submissions
 2. **Manage Policies** - Create, edit, or delete grading policies
-3. **Settings** - Configure display options
+3. **Settings** - Configure global settings
 4. **Uninstall** - Remove autoscan and configs
 
 ### Grading Results

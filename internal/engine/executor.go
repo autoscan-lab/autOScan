@@ -100,21 +100,12 @@ func (e *Executor) ExecuteTestCase(ctx context.Context, sub domain.Submission, t
 	return e.Execute(ctx, sub, tc.Args, tc.Input).WithTestCase(tc.Name, tc.ExpectedExit)
 }
 
-func (e *Executor) ExecuteAllTestCases(ctx context.Context, sub domain.Submission) []domain.ExecuteResult {
-	if len(e.policy.Run.TestCases) == 0 {
-		return nil
-	}
-	results := make([]domain.ExecuteResult, len(e.policy.Run.TestCases))
-	for i, tc := range e.policy.Run.TestCases {
-		results[i] = e.ExecuteTestCase(ctx, sub, tc)
-	}
-	return results
-}
-
 func (e *Executor) HasMultiProcess() bool {
 	return e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled
 }
 
+// resolveTestFilePaths replaces args that exactly match a declared test file
+// with their full path in ~/.config/autoscan/test_files/
 func (e *Executor) resolveTestFilePaths(args []string) []string {
 	if len(e.policy.TestFiles) == 0 {
 		return args
@@ -144,6 +135,9 @@ func (e *Executor) ExecuteMultiProcessScenario(ctx context.Context, sub domain.S
 	return e.executeMultiProcessWithOverrides(ctx, sub, &scenario, onUpdate)
 }
 
+// executeMultiProcessWithOverrides spawns each executable as a process.
+// Each process gets its own goroutine for lifecycle management, plus goroutines for
+// stdout/stderr streaming. Processes run concurrently and can be cancelled via context.
 func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub domain.Submission, scenario *policy.MultiProcessScenario, onUpdate func(*domain.MultiProcessResult)) *domain.MultiProcessResult {
 	config := e.policy.Run.MultiProcess
 	if config == nil || len(config.Executables) == 0 {
@@ -242,24 +236,26 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				mu.Unlock()
 			}
 
-			var stdoutDone, stderrDone sync.WaitGroup
-			stdoutDone.Add(1)
-			stderrDone.Add(1)
+		var stdoutDone, stderrDone sync.WaitGroup
+		stdoutDone.Add(1)
+		stderrDone.Add(1)
 
-			go func() {
-				<-ctx.Done()
-				if cmd.Process != nil {
-					cmd.Process.Kill()
-				}
-				stdoutPipe.Close()
-				stderrPipe.Close()
-			}()
+		// Cancellation watcher: kills process and closes pipes immediately on cancel
+		go func() {
+			<-ctx.Done()
+			if cmd.Process != nil {
+				cmd.Process.Kill()
+			}
+			stdoutPipe.Close()
+			stderrPipe.Close()
+		}()
 
-			go func() {
-				defer stdoutDone.Done()
-				buf := make([]byte, 1024)
-				for {
-					n, err := stdoutPipe.Read(buf)
+		// Stdout reader: streams output to result in real-time
+		go func() {
+			defer stdoutDone.Done()
+			buf := make([]byte, 1024)
+			for {
+				n, err := stdoutPipe.Read(buf)
 					if n > 0 {
 						mu.Lock()
 						procResult.Stdout += string(buf[:n])
@@ -275,43 +271,47 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 					if err != nil {
 						break
 					}
-				}
-			}()
+			}
+		}()
 
-			go func() {
-				defer stderrDone.Done()
-				buf := make([]byte, 1024)
-				for {
-					n, err := stderrPipe.Read(buf)
-					if n > 0 {
+		// Stderr reader: same pattern as stdout
+		go func() {
+			defer stderrDone.Done()
+			buf := make([]byte, 1024)
+			for {
+				n, err := stderrPipe.Read(buf)
+				if n > 0 {
+					mu.Lock()
+					procResult.Stderr += string(buf[:n])
+					result.TotalDuration = time.Since(start)
+					computeMultiProcessStatus(result)
+					mu.Unlock()
+					if onUpdate != nil {
 						mu.Lock()
-						procResult.Stderr += string(buf[:n])
-						result.TotalDuration = time.Since(start)
-						computeMultiProcessStatus(result)
+						onUpdate(result)
 						mu.Unlock()
-						if onUpdate != nil {
-							mu.Lock()
-							onUpdate(result)
-							mu.Unlock()
-						}
-					}
-					if err != nil {
-						break
 					}
 				}
-			}()
+				if err != nil {
+					break
+				}
+			}
+		}()
 
-			done := make(chan error, 1)
-			go func() {
-				stdoutDone.Wait()
-				stderrDone.Wait()
-				done <- cmd.Wait()
-			}()
+		// Done waiter: waits for readers to finish, then sends exit status to channel.
+		// Runs in goroutine so we can select on it alongside ctx.Done().
+		done := make(chan error, 1)
+		go func() {
+			stdoutDone.Wait()
+			stderrDone.Wait()
+			done <- cmd.Wait()
+		}()
 
-			var err error
-			select {
-			case err = <-done:
-			case <-ctx.Done():
+		// Wait for process to finish OR context cancellation
+		var err error
+		select {
+		case err = <-done:
+		case <-ctx.Done():
 				if cmd.Process != nil {
 					cmd.Process.Kill()
 				}

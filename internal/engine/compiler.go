@@ -133,30 +133,23 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		return domain.NewCompileResult(false, nil, -1, "", err.Error(), time.Since(start).Milliseconds(), false)
 	}
 
-	// Copy source files to binary directory (for ftok and similar use cases)
-	e.copySourceFiles(sub, outputDir)
+	// If they need to reference the source files. ie: ftok, semget, etc 
+	e.copySourceFiles(sub, outputDir) 
 
 	if e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled && len(e.policy.Run.MultiProcess.Executables) > 0 {
 		return e.compileMultiProcess(ctx, sub, outputDir, start)
 	}
 
-	var outputName string
-	var sourceFiles []string
-
-	if e.policy.Compile.SourceFile != "" {
-		sourceFile := filepath.Join(sub.Path, e.policy.Compile.SourceFile)
-		if _, err := os.Stat(sourceFile); err != nil {
-			return domain.NewCompileResult(false, nil, 1, "", fmt.Sprintf("Source file not found: %s", e.policy.Compile.SourceFile), time.Since(start).Milliseconds(), false)
-		}
-		sourceFiles = []string{sourceFile}
-		outputName = strings.TrimSuffix(e.policy.Compile.SourceFile, ".c")
-	} else {
-		outputName = e.policy.Compile.Output
-		sourceFiles = make([]string, len(sub.CFiles))
-		for i, f := range sub.CFiles {
-			sourceFiles[i] = filepath.Join(sub.Path, f)
-		}
+	if e.policy.Compile.SourceFile == "" {
+		return domain.NewCompileResult(false, nil, 1, "", "Policy error: source_file must be set for single-process compilation", time.Since(start).Milliseconds(), false)
 	}
+
+	sourceFile := filepath.Join(sub.Path, e.policy.Compile.SourceFile)
+	if _, err := os.Stat(sourceFile); err != nil {
+		return domain.NewCompileResult(false, nil, 1, "", fmt.Sprintf("Source file not found: %s", e.policy.Compile.SourceFile), time.Since(start).Milliseconds(), false)
+	}
+	sourceFiles := []string{sourceFile}
+	outputName := strings.TrimSuffix(e.policy.Compile.SourceFile, ".c")
 
 	outputPath := filepath.Join(outputDir, outputName)
 	libraryFiles, libDir, libraryWarnings := e.resolveLibraryFiles()

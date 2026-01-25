@@ -9,7 +9,6 @@ import (
 	"github.com/felipetrejos/autoscan/internal/domain"
 )
 
-// JSONReport is the JSON export format.
 type JSONReport struct {
 	PolicyName string           `json:"policy_name"`
 	Root       string           `json:"root"`
@@ -20,7 +19,6 @@ type JSONReport struct {
 	Results    []JSONSubmission `json:"results"`
 }
 
-// JSONSummary contains aggregate statistics.
 type JSONSummary struct {
 	TotalSubmissions      int            `json:"total_submissions"`
 	CompilePass           int            `json:"compile_pass"`
@@ -32,7 +30,6 @@ type JSONSummary struct {
 	TopBannedFunctions    map[string]int `json:"top_banned_functions"`
 }
 
-// JSONSubmission contains per-submission details.
 type JSONSubmission struct {
 	ID             string         `json:"id"`
 	Status         string         `json:"status"`
@@ -46,7 +43,6 @@ type JSONSubmission struct {
 	BannedHits     []JSONBannedHit `json:"banned_hits,omitempty"`
 }
 
-// JSONBannedHit represents a single banned call.
 type JSONBannedHit struct {
 	Function string `json:"function"`
 	File     string `json:"file"`
@@ -55,7 +51,7 @@ type JSONBannedHit struct {
 	Snippet  string `json:"snippet"`
 }
 
-// JSON exports a report to JSON format.
+// Export a report to JSON format
 func JSON(report domain.RunReport, outputDir string) (string, error) {
 	jr := JSONReport{
 		PolicyName: report.PolicyName,
@@ -88,12 +84,10 @@ func JSON(report domain.RunReport, outputDir string) (string, error) {
 			BannedCount:    r.Scan.TotalHits(),
 		}
 
-		// Only include stderr if there's an error
 		if !r.Compile.OK && r.Compile.Stderr != "" {
 			js.Stderr = r.Compile.Stderr
 		}
 
-		// Include banned hits
 		if len(r.Scan.Hits) > 0 {
 			js.BannedHits = make([]JSONBannedHit, len(r.Scan.Hits))
 			for j, hit := range r.Scan.Hits {

@@ -1,4 +1,3 @@
-// Package config handles configuration directory setup and embedded defaults.
 package config
 
 import (
@@ -14,17 +13,14 @@ import (
 //go:embed defaults/*
 var defaultsFS embed.FS
 
-// Settings holds global application settings
+// Settings holds the global settings
 type Settings struct {
-	// ShortNames truncates student folder names at the first underscore
 	ShortNames bool `yaml:"short_names"`
-	// KeepBinaries controls whether compiled binaries are deleted after grading
 	KeepBinaries bool `yaml:"keep_binaries"`
-	// MaxWorkers limits concurrent compilation processes (0 = use all CPUs)
 	MaxWorkers int `yaml:"max_workers"`
 }
 
-// DefaultSettings returns default settings
+// DefaultSettings returns the default settings
 func DefaultSettings() Settings {
 	return Settings{
 		ShortNames:   true,
@@ -33,7 +29,7 @@ func DefaultSettings() Settings {
 	}
 }
 
-// Dir returns the config directory path (~/.config/autoscan)
+// Dir returns the config directory path
 func Dir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -60,7 +56,7 @@ func BannedFile() (string, error) {
 	return filepath.Join(dir, "banned.yaml"), nil
 }
 
-// LibrariesDir returns the libraries directory path for bundled library files
+// LibrariesDir returns the libraries directory path
 func LibrariesDir() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -69,7 +65,7 @@ func LibrariesDir() (string, error) {
 	return filepath.Join(dir, "libraries"), nil
 }
 
-// EnsureLibrariesDir creates the libraries directory if it doesn't exist
+// EnsureLibrariesDir creates the libraries directory
 func EnsureLibrariesDir() (string, error) {
 	libDir, err := LibrariesDir()
 	if err != nil {
@@ -81,7 +77,7 @@ func EnsureLibrariesDir() (string, error) {
 	return libDir, nil
 }
 
-// TestFilesDir returns the test_files directory path for bundled test input files
+// TestFilesDir returns the test_files directory path
 func TestFilesDir() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -90,7 +86,7 @@ func TestFilesDir() (string, error) {
 	return filepath.Join(dir, "test_files"), nil
 }
 
-// EnsureTestFilesDir creates the test_files directory if it doesn't exist
+// EnsureTestFilesDir creates the test_files directory
 func EnsureTestFilesDir() (string, error) {
 	testDir, err := TestFilesDir()
 	if err != nil {
@@ -102,7 +98,7 @@ func EnsureTestFilesDir() (string, error) {
 	return testDir, nil
 }
 
-// SettingsFile returns the settings.yaml file path
+// SettingsFile returns the settings.yaml path
 func SettingsFile() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -111,7 +107,7 @@ func SettingsFile() (string, error) {
 	return filepath.Join(dir, "settings.yaml"), nil
 }
 
-// LoadSettings loads settings from settings.yaml
+// LoadSettings loads the settings from settings.yaml
 func LoadSettings() (Settings, error) {
 	settingsFile, err := SettingsFile()
 	if err != nil {
@@ -120,7 +116,6 @@ func LoadSettings() (Settings, error) {
 
 	data, err := os.ReadFile(settingsFile)
 	if err != nil {
-		// Return defaults if file doesn't exist
 		if os.IsNotExist(err) {
 			return DefaultSettings(), nil
 		}
@@ -147,30 +142,27 @@ func SaveSettings(s Settings) error {
 		return err
 	}
 
-	header := "# autOScan Settings\n\n"
-	return os.WriteFile(settingsFile, []byte(header+string(data)), 0644)
+	return os.WriteFile(settingsFile, []byte(string(data)), 0644)
 }
 
-// Init ensures the config directory exists with default files.
-// Called on app startup. Creates missing files if they don't exist.
+// Init ensures the config directory exists with default files
 func Init() error {
 	configDir, err := Dir()
 	if err != nil {
 		return fmt.Errorf("getting config dir: %w", err)
 	}
 
-	// Create config directory if needed
+	// Create config directory
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
 
-	// Copy embedded defaults (only if files don't exist)
+	// Copy embedded defaults
 	err = fs.WalkDir(defaultsFS, "defaults", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Calculate destination path (strip "defaults/" prefix)
 		relPath, _ := filepath.Rel("defaults", path)
 		destPath := filepath.Join(configDir, relPath)
 
@@ -178,18 +170,15 @@ func Init() error {
 			return os.MkdirAll(destPath, 0755)
 		}
 
-		// Skip if file already exists
 		if _, err := os.Stat(destPath); err == nil {
 			return nil
 		}
 
-		// Read embedded file
 		data, err := defaultsFS.ReadFile(path)
 		if err != nil {
 			return err
 		}
 
-		// Write to config dir
 		return os.WriteFile(destPath, data, 0644)
 	})
 

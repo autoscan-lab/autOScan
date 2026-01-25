@@ -10,7 +10,7 @@ import (
 	"github.com/felipetrejos/autoscan/internal/domain"
 )
 
-// CSV exports a report to CSV format.
+// Export a report to CSV format
 func CSV(report domain.RunReport, outputDir string) (string, error) {
 	filename := filepath.Join(outputDir, "report.csv")
 	file, err := os.Create(filename)
@@ -22,7 +22,6 @@ func CSV(report domain.RunReport, outputDir string) (string, error) {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Header
 	header := []string{
 		"submission_id",
 		"status",
@@ -38,15 +37,12 @@ func CSV(report domain.RunReport, outputDir string) (string, error) {
 		return "", err
 	}
 
-	// Rows
 	for _, r := range report.Results {
-		// Get list of banned functions
 		var bannedFuncs []string
 		for fn := range r.Scan.HitsByFunction {
 			bannedFuncs = append(bannedFuncs, fn)
 		}
 
-		// Get first error line from stderr
 		firstError := ""
 		if !r.Compile.OK && r.Compile.Stderr != "" {
 			lines := strings.Split(r.Compile.Stderr, "\n")
@@ -60,7 +56,6 @@ func CSV(report domain.RunReport, outputDir string) (string, error) {
 					break
 				}
 			}
-			// If no error line found, use first non-empty line
 			if firstError == "" {
 				for _, line := range lines {
 					line = strings.TrimSpace(line)
