@@ -1,6 +1,4 @@
 # Global Banned Functions
-# Add function names to this list to flag them in all scans.
-
 banned:
   - system
   - popen

@@ -71,7 +71,6 @@ type PolicyEditor struct {
 		focusedInput int
 	}
 
-	runTimeout          string
 	multiProcessEnabled bool
 	multiProcessExecs   []policy.ProcessConfig
 	multiProcessCursor  int
@@ -178,7 +177,6 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 		browsingStartDir: cwd,
 		focusedField:    FieldName,
 		testCases:       []policy.TestCase{},
-		runTimeout:      "5s",
 		multiProcessExecs:  []policy.ProcessConfig{},
 		testScenarios:      []policy.MultiProcessScenario{},
 	}
@@ -220,10 +218,6 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.testCases = make([]policy.TestCase, len(p.Run.TestCases))
 	copy(e.testCases, p.Run.TestCases)
 	e.testCasesCursor = 0
-	e.runTimeout = p.Run.Timeout
-	if e.runTimeout == "" {
-		e.runTimeout = "5s"
-	}
 
 	if p.Run.MultiProcess != nil {
 		e.multiProcessEnabled = p.Run.MultiProcess.Enabled
@@ -270,7 +264,6 @@ func (e *PolicyEditor) Reset() {
 	e.testCasesCursor = 0
 	e.editingTestCase = false
 	e.editingTestCaseIdx = -1
-	e.runTimeout = "5s"
 	e.resetTestCaseInputs()
 
 	// Reset multi-process
@@ -1415,11 +1408,6 @@ func (e *PolicyEditor) save() tea.Cmd {
 			} `yaml:"run,omitempty"`
 			LibraryFiles []string `yaml:"library_files,omitempty"`
 			TestFiles    []string `yaml:"test_files,omitempty"`
-			Report       struct {
-				Export struct {
-					Markdown bool `yaml:"markdown"`
-				} `yaml:"export"`
-			} `yaml:"report"`
 		}{}
 
 		p.Name = name
@@ -1431,11 +1419,9 @@ func (e *PolicyEditor) save() tea.Cmd {
 		p.Compile.SourceFile = sourceFile
 		p.LibraryFiles = e.libraryFiles
 		p.TestFiles = e.testFiles
-		p.Report.Export.Markdown = true
 
 		// Add run config if there are test cases or multi-process
-		if len(e.testCases) > 0 || e.runTimeout != "" || len(e.multiProcessExecs) > 0 {
-			p.Run.Timeout = e.runTimeout
+		if len(e.testCases) > 0 || len(e.multiProcessExecs) > 0 {
 			for _, tc := range e.testCases {
 				p.Run.TestCases = append(p.Run.TestCases, TestCaseYAML{
 					Name:         tc.Name,

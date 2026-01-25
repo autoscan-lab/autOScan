@@ -1,0 +1,41 @@
+name: S7-sems
+root: .
+discover:
+    leaf_submission: true
+    min_c_files: 1
+compile:
+    gcc: gcc
+    flags:
+        - -Wall
+        - -Wextra
+run:
+    multi_process:
+        enabled: true
+        executables:
+            - name: Central
+              source_file: central.c
+            - name: Divide
+              source_file: divide.c
+              start_delay_ms: 50
+            - name: Multiply
+              source_file: multiply.c
+              start_delay_ms: 50
+            - name: Sqrt
+              source_file: sqrt.c
+              start_delay_ms: 50
+        test_scenarios:
+            - name: No args
+            - name: Central.c as key
+              process_args:
+                Central:
+                    - central.c
+                Divide:
+                    - central.c
+                Multiply:
+                    - central.c
+                Sqrt:
+                    - central.c
+              process_inputs:
+                Central: 3\n1\n1\n1\n1\n1\n9\n
+library_files:
+    - semaphore_v2.h

@@ -33,7 +33,7 @@
 
 ## Installation
 
-**Supported Platforms:** macOS (arm64) and Linux (amd64)
+**Supported Platforms:** macOS (arm64), Linux (amd64) and Windows (amd64)
 
 Download the appropriate binary from [Releases](https://github.com/Feli05/autOScan/releases):
 
@@ -47,6 +47,11 @@ chmod +x autoscan-darwin-arm64
 ```bash
 chmod +x autoscan-linux-amd64
 ./autoscan-linux-amd64
+```
+
+**Windows:**
+```bash
+NOT TESTED YET
 ```
 
 On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add to PATH if needed.
@@ -100,7 +105,6 @@ On first run, configs are created at `~/.config/autoscan/`:
 ```
 ~/.config/autoscan/
 ├── policies/        # Policy YAML files
-│   └── example.yaml
 ├── libraries/       # Bundled library files (.c/.h/.o)
 ├── test_files/      # Bundled test input files
 ├── banned.yaml      # Global banned functions
@@ -200,7 +204,7 @@ name: "Lab 05 - Arguments"
 compile:
   gcc: "gcc"
   flags: ["-Wall"]
-  output: "lab05"
+  source_file: "lab05.c"  # Binary name derived automatically (lab05)
 run:
   timeout: "5s"
   test_cases:
@@ -274,6 +278,9 @@ run:
         process_args:
           Producer: []
           Consumer: []
+        process_inputs:
+          Producer: ""
+          Consumer: ""
         expected_exits:
           Producer: 1
           Consumer: 1

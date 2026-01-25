@@ -1,0 +1,23 @@
+name: S0-fds
+root: .
+discover:
+    leaf_submission: true
+    min_c_files: 1
+compile:
+    gcc: gcc
+    flags:
+        - -Wall
+        - -Wextra
+    source_file: S0.c
+run:
+    test_cases:
+        - name: No args
+          expected_exit: 0
+        - name: Pass test files
+          args:
+            - routes.bin
+            - stations.txt
+          expected_exit: 0
+test_files:
+    - routes.bin
+    - stations.txt

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/felipetrejos/autoscan/internal/config"
 	"gopkg.in/yaml.v3"
@@ -39,9 +38,6 @@ type Policy struct {
 	// TestFiles lists input files bundled for testing (e.g., ["input.txt", "data.bin"])
 	// These are copied to ~/.config/autoscan/test_files/ and can be referenced in args
 	TestFiles []string `yaml:"test_files,omitempty"`
-
-	// Report configures export options
-	Report ReportConfig `yaml:"report"`
 
 	// FilePath is the path to the policy file (set after loading)
 	FilePath string `yaml:"-"`
@@ -79,9 +75,6 @@ type CompileConfig struct {
 
 // RunConfig controls execution/testing of compiled binaries.
 type RunConfig struct {
-	// Timeout is the maximum execution time (e.g., "5s", "10s")
-	Timeout string `yaml:"timeout"`
-
 	// TestCases are predefined test scenarios
 	TestCases []TestCase `yaml:"test_cases"`
 
@@ -151,31 +144,6 @@ type TestCase struct {
 
 	// ExpectedExit is the expected exit code (0 for success)
 	ExpectedExit *int `yaml:"expected_exit"`
-}
-
-// GetRunTimeout returns the run timeout duration, defaulting to 5s.
-func (p *Policy) GetRunTimeout() time.Duration {
-	if p.Run.Timeout == "" {
-		return 5 * time.Second
-	}
-	d, err := time.ParseDuration(p.Run.Timeout)
-	if err != nil {
-		return 5 * time.Second
-	}
-	return d
-}
-
-// ReportConfig controls export options.
-type ReportConfig struct {
-	// Export configures which formats to export
-	Export ExportConfig `yaml:"export"`
-}
-
-// ExportConfig controls which export formats are enabled.
-type ExportConfig struct {
-	Markdown bool `yaml:"markdown"`
-	JSON     bool `yaml:"json"`
-	CSV      bool `yaml:"csv"`
 }
 
 // Load reads and parses a policy file from the given path.

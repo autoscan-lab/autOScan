@@ -23,7 +23,6 @@ func unescapeInput(s string) string {
 
 type Executor struct {
 	policy       *policy.Policy
-	timeout      time.Duration
 	binaryDir    string
 	outputName   string
 	testFilesDir string
@@ -46,7 +45,6 @@ func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool)
 	home, _ := os.UserHomeDir()
 	return &Executor{
 		policy:       p,
-		timeout:      p.GetRunTimeout(),
 		binaryDir:    binaryDir,
 		outputName:   outputName,
 		testFilesDir: filepath.Join(home, ".config", "autoscan", "test_files"),
@@ -77,10 +75,7 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 	binaryDir := filepath.Dir(binaryPath)
 	resolvedArgs := e.resolveTestFilePaths(args)
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(timeoutCtx, binaryPath, resolvedArgs...)
+	cmd := exec.CommandContext(ctx, binaryPath, resolvedArgs...)
 	cmd.Dir = binaryDir
 	if input != "" {
 		cmd.Stdin = strings.NewReader(unescapeInput(input))
@@ -93,7 +88,7 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 	start := time.Now()
 	err := cmd.Run()
 	duration := time.Since(start)
-	timedOut := timeoutCtx.Err() == context.DeadlineExceeded
+	timedOut := false
 
 	exitCode := 0
 	if err != nil {

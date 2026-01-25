@@ -1,0 +1,23 @@
+name: S2-threads
+root: .
+discover:
+    leaf_submission: true
+    min_c_files: 1
+compile:
+    gcc: gcc
+    flags:
+        - -Wall
+        - -Wextra
+    source_file: S2.c
+run:
+    test_cases:
+        - name: No args
+          expected_exit: 0
+        - name: 3 Patients & 2 Doctors
+          args:
+            - "3"
+            - "2"
+          expected_exit: 0
+library_files:
+    - Hospital.h
+    - Hospital.o
