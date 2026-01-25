@@ -120,7 +120,6 @@ compile:
   flags: ["-Wall", "-Wextra", "-lpthread"]
   source_file: "lab03.c"  # Binary name derived automatically (lab03)
 run:
-  timeout: "5s"
   test_cases:
     - name: "Basic test"
       args: ["2", "3"]
@@ -206,7 +205,6 @@ compile:
   flags: ["-Wall"]
   source_file: "lab05.c"  # Binary name derived automatically (lab05)
 run:
-  timeout: "5s"
   test_cases:
     - name: "No arguments"
       args: []
