@@ -1944,19 +1944,13 @@ func (e *PolicyEditor) View() string {
 
 	var modeContent strings.Builder
 	if !e.multiProcessEnabled {
-		modeContent.WriteString(styles.SuccessText.Render("● Single Process"))
-		modeContent.WriteString(styles.SubtleText.Render(" - Compile one source file into one binary"))
+		modeContent.WriteString(styles.SuccessText.Render("●") + " Single Process" + styles.SubtleText.Render(" - Compile one source file into one binary"))
+		modeContent.WriteString("\n")
+		modeContent.WriteString(styles.SubtleText.Render("○ Multi-Process - Multiple binaries running in parallel"))
 	} else {
-		modeContent.WriteString(styles.SubtleText.Render("○ Single Process"))
-		modeContent.WriteString(styles.SubtleText.Render(" - Compile one source file into one binary"))
-	}
-	modeContent.WriteString("    ")
-	if e.multiProcessEnabled {
-		modeContent.WriteString(styles.SuccessText.Render("● Multi-Process"))
-		modeContent.WriteString(styles.SubtleText.Render(" - Multiple binaries running in parallel"))
-	} else {
-		modeContent.WriteString(styles.SubtleText.Render("○ Multi-Process"))
-		modeContent.WriteString(styles.SubtleText.Render(" - Multiple binaries running in parallel"))
+		modeContent.WriteString(styles.SubtleText.Render("○ Single Process - Compile one source file into one binary"))
+		modeContent.WriteString("\n")
+		modeContent.WriteString(styles.SuccessText.Render("●") + " Multi-Process" + styles.SubtleText.Render(" - Multiple binaries running in parallel"))
 	}
 
 	b.WriteString(modeBox.Render(modeContent.String()))
