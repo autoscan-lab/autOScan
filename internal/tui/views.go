@@ -528,19 +528,37 @@ func (m Model) renderSubmissions() string {
 			Padding(0, 2).
 			MarginTop(1)
 
+		searchLabel := ""
+		if strings.TrimSpace(m.searchQuery) != "" {
+			searchLabel = fmt.Sprintf("  Search: %s", m.searchQuery)
+		}
+
 		stats := fmt.Sprintf(
-			"Pass: %d  Fail: %d  Banned: %d  Time: %dms  Filter: %s",
+			"Pass: %d  Fail: %d  Banned: %d  Time: %dms  Filter: %s%s",
 			m.report.Summary.CompilePass,
 			m.report.Summary.CompileFail,
 			m.report.Summary.SubmissionsWithBanned,
 			m.report.Summary.DurationMs,
 			m.filter.String(),
+			searchLabel,
 		)
 		b.WriteString(statsBox.Render(stats))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
+
+	// Always show search bar, highlight when active
+	searchBorderColor := styles.Muted
+	if m.searchActive {
+		searchBorderColor = styles.Primary
+	}
+	searchBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(searchBorderColor).
+		Padding(0, 2)
+	b.WriteString(searchBox.Render(fmt.Sprintf("Search: %s", m.searchInput.View())))
+	b.WriteString("\n\n")
 
 	tableBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -697,10 +715,11 @@ func (m Model) renderSubmissions() string {
 	b.WriteString(components.RenderHelpBar([]components.HelpItem{
 		{Key: "↑/↓", Desc: "navigate"},
 		{Key: "enter", Desc: "details"},
+		{Key: "/", Desc: "search"},
 		{Key: "f", Desc: "filter"},
 		{Key: "r", Desc: "re-run"},
 		{Key: "e", Desc: "export"},
-		{Key: "esc", Desc: "back"},
+		{Key: "esc", Desc: "clear/back"},
 	}))
 
 	return b.String()

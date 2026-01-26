@@ -158,6 +158,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	if m.currentView == ViewSubmissions && m.searchActive {
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -362,9 +370,54 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.searchActive {
+		switch msg.String() {
+		case "esc", "down", "j":
+			m.searchActive = false
+			m.searchQuery = m.searchInput.Value()
+			m.searchInput.Blur()
+			m.cursor = 0
+			m.scrollOffset = 0
+			return m, nil
+		case "enter":
+			m.searchActive = false
+			m.searchQuery = m.searchInput.Value()
+			m.searchInput.Blur()
+			return m, nil
+		}
+
+		prev := m.searchInput.Value()
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		if m.searchInput.Value() != prev {
+			m.searchQuery = m.searchInput.Value()
+			m.cursor = 0
+			m.scrollOffset = 0
+			m.clearRunResults()
+		}
+		return m, cmd
+	}
+
 	filtered := m.filteredResults()
 
 	switch msg.String() {
+	case "/":
+		m.searchActive = true
+		m.searchInput.Focus()
+		return m, textinput.Blink
+	case "esc":
+		if strings.TrimSpace(m.searchQuery) != "" {
+			m.searchQuery = ""
+			m.searchInput.SetValue("")
+			m.cursor = 0
+			m.scrollOffset = 0
+			m.clearRunResults()
+			return m, nil
+		}
+		m.currentView = ViewHome
+		m.results = nil
+		m.report = nil
+		return m, nil
 	case "j", "down":
 		if m.cursor < len(filtered)-1 {
 			m.cursor++
@@ -380,6 +433,11 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.scrollOffset--
 			}
 			m.clearRunResults()
+		} else {
+			// At top of list, go to search bar
+			m.searchActive = true
+			m.searchInput.Focus()
+			return m, textinput.Blink
 		}
 	case "enter":
 		if len(filtered) > 0 {
@@ -398,7 +456,7 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		m.currentView = ViewExport
 		m.exportCursor = 0
-	case "q", "esc":
+	case "q":
 		m.currentView = ViewHome
 		m.results = nil
 		m.report = nil
@@ -974,22 +1032,31 @@ func (m Model) filteredResults() []domain.SubmissionResult {
 	}
 
 	var filtered []domain.SubmissionResult
+	query := strings.ToLower(strings.TrimSpace(m.searchQuery))
 	for _, r := range m.results {
 		switch m.filter {
 		case FilterFailed:
 			if !r.Compile.OK {
-				filtered = append(filtered, r)
+				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
+					filtered = append(filtered, r)
+				}
 			}
 		case FilterBanned:
 			if r.Scan.TotalHits() > 0 {
-				filtered = append(filtered, r)
+				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
+					filtered = append(filtered, r)
+				}
 			}
 		case FilterClean:
 			if r.Status == domain.StatusClean {
-				filtered = append(filtered, r)
+				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
+					filtered = append(filtered, r)
+				}
 			}
 		default:
-			filtered = append(filtered, r)
+			if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
+				filtered = append(filtered, r)
+			}
 		}
 	}
 

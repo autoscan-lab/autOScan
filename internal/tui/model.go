@@ -126,7 +126,10 @@ type Model struct {
 	cursor       int
 	scrollOffset int
 	visibleRows  int
-	filter Filter
+	filter       Filter
+	searchInput  textinput.Model
+	searchActive bool
+	searchQuery  string
 
 	detailsTab    int
 	detailScroll  int
@@ -180,6 +183,12 @@ func New(cfg Config) Model {
 	runStdinInput.CharLimit = 1024
 	runStdinInput.Width = 40
 
+	searchInput := textinput.New()
+	searchInput.Placeholder = "search student by name..."
+	searchInput.CharLimit = 64
+	searchInput.Prompt = ""
+	searchInput.Width = 30
+
 	settings, _ := config.LoadSettings()
 	helpPanel := components.NewHelpPanel(28, styles.Version)
 
@@ -193,6 +202,7 @@ func New(cfg Config) Model {
 		folderBrowser: NewFolderBrowser(root),
 		visibleRows:   20,
 		filter:        FilterAll,
+		searchInput:   searchInput,
 		menuItem:      MenuRunGrader,
 		policyEditor:  NewPolicyEditor(80, 40),
 		bannedInput:   bannedInput,

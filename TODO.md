@@ -2,8 +2,8 @@
 
 ## High Priority
 
-- [ ] **Student Search/Filter**
-  - Press `/` to filter submissions by ID
+- [x] **Student Search/Filter**
+  - Press `/` or `↑` to filter submissions by name
   - Real-time filtering as you type
 
 - [ ] **Code Similarity Detection**
