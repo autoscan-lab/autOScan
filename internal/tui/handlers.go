@@ -993,16 +993,6 @@ func (m Model) filteredResults() []domain.SubmissionResult {
 		}
 	}
 
-	if m.searchQuery != "" {
-		var searched []domain.SubmissionResult
-		for _, r := range filtered {
-			if strings.Contains(strings.ToLower(r.Submission.ID), strings.ToLower(m.searchQuery)) {
-				searched = append(searched, r)
-			}
-		}
-		filtered = searched
-	}
-
 	return filtered
 }
 

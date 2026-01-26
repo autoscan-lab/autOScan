@@ -126,9 +126,7 @@ type Model struct {
 	cursor       int
 	scrollOffset int
 	visibleRows  int
-	filter       Filter
-	searchQuery  string
-	searchActive bool
+	filter Filter
 
 	detailsTab    int
 	detailScroll  int

@@ -26,7 +26,7 @@ func NewHelpPanel(width int, version string) HelpPanel {
 		shortcuts: []HelpItem{
 			{"↑/↓", "Navigate"},
 			{"Enter", "Select"},
-			{"1-5", "Quick jump"},
+			{"1-4", "Quick jump"},
 			{"q", "Quit"},
 		},
 	}
@@ -66,6 +66,8 @@ func (h *HelpPanel) View() string {
 		"• Batch compile with gcc",
 		"• Detect banned functions",
 		"• Run & test submissions",
+		"• Multi-process execution",
+		"• Real-time output streaming",
 		"• Export to JSON/CSV",
 	}
 	for _, f := range features {
