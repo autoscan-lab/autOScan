@@ -23,11 +23,12 @@ func unescapeInput(s string) string {
 }
 
 type Executor struct {
-	policy       *policy.Policy
-	binaryDir    string
-	outputName   string
-	testFilesDir string
-	shortNames   bool
+	policy             *policy.Policy
+	binaryDir          string
+	outputName         string
+	testFilesDir       string
+	expectedOutputsDir string
+	shortNames         bool
 }
 
 func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool) *Executor {
@@ -38,11 +39,12 @@ func NewExecutorWithOptions(p *policy.Policy, binaryDir string, shortNames bool)
 
 	home, _ := os.UserHomeDir()
 	return &Executor{
-		policy:       p,
-		binaryDir:    binaryDir,
-		outputName:   outputName,
-		testFilesDir: filepath.Join(home, ".config", "autoscan", "test_files"),
-		shortNames:   shortNames,
+		policy:             p,
+		binaryDir:          binaryDir,
+		outputName:         outputName,
+		testFilesDir:       filepath.Join(home, ".config", "autoscan", "test_files"),
+		expectedOutputsDir: filepath.Join(home, ".config", "autoscan", "expected_outputs"),
+		shortNames:         shortNames,
 	}
 }
 
@@ -97,7 +99,21 @@ func (e *Executor) Execute(ctx context.Context, sub domain.Submission, args []st
 }
 
 func (e *Executor) ExecuteTestCase(ctx context.Context, sub domain.Submission, tc policy.TestCase) domain.ExecuteResult {
-	return e.Execute(ctx, sub, tc.Args, tc.Input).WithTestCase(tc.Name, tc.ExpectedExit)
+	result := e.Execute(ctx, sub, tc.Args, tc.Input).WithTestCase(tc.Name, tc.ExpectedExit)
+
+	// Compare output if expected output file is configured
+	if tc.ExpectedOutputFile != "" {
+		expectedPath := filepath.Join(e.expectedOutputsDir, tc.ExpectedOutputFile)
+		if expectedData, err := os.ReadFile(expectedPath); err == nil {
+			result.OutputMatch, result.OutputDiff = domain.ComputeOutputDiff(string(expectedData), result.Stdout)
+		} else {
+			result.OutputMatch = domain.OutputMatchMissing
+		}
+	} else {
+		result.OutputMatch = domain.OutputMatchNone
+	}
+
+	return result
 }
 
 func (e *Executor) HasMultiProcess() bool {
@@ -339,6 +355,22 @@ func (e *Executor) executeMultiProcessWithOverrides(ctx context.Context, sub dom
 				procResult.Passed = !procResult.Killed && procResult.ExitCode == *procResult.ExpectedExit
 			} else {
 				procResult.Passed = !procResult.Killed
+			}
+
+			// Compare output if expected output file is configured for this process
+			if scenario != nil && scenario.ExpectedOutputs != nil {
+				if expectedFile, ok := scenario.ExpectedOutputs[proc.Name]; ok && expectedFile != "" {
+					expectedPath := filepath.Join(e.expectedOutputsDir, expectedFile)
+					if expectedData, err := os.ReadFile(expectedPath); err == nil {
+						procResult.OutputMatch, procResult.OutputDiff = domain.ComputeOutputDiff(string(expectedData), procResult.Stdout)
+					} else {
+						procResult.OutputMatch = domain.OutputMatchMissing
+					}
+				} else {
+					procResult.OutputMatch = domain.OutputMatchNone
+				}
+			} else {
+				procResult.OutputMatch = domain.OutputMatchNone
 			}
 
 			if onUpdate != nil {

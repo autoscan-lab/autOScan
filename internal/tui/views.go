@@ -1359,12 +1359,12 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 
 	var content strings.Builder
 
-	allOutput := proc.Stdout
+	allOutput := components.SanitizeDisplay(proc.Stdout)
 	if proc.Stderr != "" {
 		if allOutput != "" {
-			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + proc.Stderr
+			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
 		} else {
-			allOutput = styles.WarningText.Render("stderr:") + "\n" + proc.Stderr
+			allOutput = styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
 		}
 	}
 
@@ -1391,33 +1391,25 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 	}
 	content.WriteString("\n")
 
-	if proc.Running {
-		content.WriteString(styles.Highlight.Render("[RUNNING]"))
-		content.WriteString(styles.SubtleText.Render(" ..."))
-	} else if proc.Killed {
-		content.WriteString(styles.WarningText.Render("[KILLED]"))
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	} else if proc.TimedOut {
-		content.WriteString(styles.ErrorText.Render("[TIMEOUT]"))
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	} else if proc.ExpectedExit != nil {
-		if proc.Passed {
-			content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[PASS] exit %d", proc.ExitCode)))
-		} else {
-			content.WriteString(styles.ErrorText.Render(fmt.Sprintf("[FAIL] exit %d (expected %d)", proc.ExitCode, *proc.ExpectedExit)))
-		}
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	} else if proc.ExitCode == 0 {
-		content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", proc.ExitCode)))
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	} else {
-		content.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", proc.ExitCode)))
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	}
+	content.WriteString(renderProcessStatusLine(proc))
 	content.WriteString("\n")
 
+	// Show diff view if output doesn't match, otherwise show raw output
+	var outputLines []string
+	if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
+		outputLines = append(outputLines, renderDiffLines(proc.OutputDiff, contentWidth)...)
+		if proc.Stderr != "" {
+			outputLines = appendStderrBlock(outputLines, proc.Stderr, contentWidth)
+		}
+	} else {
+		outputLines = wrappedLines
+	}
+
+	totalLines = len(outputLines)
+	startIdx, endIdx = components.ScrollIndices(totalLines, maxShow, scrollOffset)
+
 	for i := startIdx; i < endIdx; i++ {
-		content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
+		content.WriteString(outputLines[i])
 		content.WriteString("\n")
 	}
 
@@ -1463,28 +1455,30 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 
 	var content strings.Builder
 
-	if r.TimedOut {
-		content.WriteString(styles.ErrorText.Render("[TIMEOUT] Execution timed out"))
-	} else if r.ExitCode == 0 {
-		content.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", r.ExitCode)))
-	} else {
-		content.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", r.ExitCode)))
-	}
-	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", r.Duration.Milliseconds())))
+	content.WriteString(renderExecuteStatusLine(r))
 
-	// Combine stdout and stderr first to calculate scroll info
-	allOutput := r.Stdout
-	if r.Stderr != "" {
-		if allOutput != "" {
-			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + r.Stderr
-		} else {
-			allOutput = styles.WarningText.Render("stderr:") + "\n" + r.Stderr
+	// Show diff view if output doesn't match, otherwise show raw output
+	var outputLines []string
+	if r.OutputMatch == domain.OutputMatchFail && len(r.OutputDiff) > 0 {
+		outputLines = append(outputLines, renderDiffLines(r.OutputDiff, contentWidth)...)
+		if r.Stderr != "" {
+			outputLines = appendStderrBlock(outputLines, r.Stderr, contentWidth)
 		}
+	} else {
+		// Combine stdout and stderr
+		allOutput := components.SanitizeDisplay(r.Stdout)
+		if r.Stderr != "" {
+			if allOutput != "" {
+				allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
+			} else {
+				allOutput = styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
+			}
+		}
+		outputLines = components.WrapLines(allOutput, contentWidth)
 	}
 
-	wrappedLines := components.WrapLines(allOutput, contentWidth)
 	maxShow := 15
-	totalLines := len(wrappedLines)
+	totalLines := len(outputLines)
 	startIdx, endIdx := components.ScrollIndices(totalLines, maxShow, m.outputScroll)
 
 	if isFocused && totalLines > maxShow {
@@ -1494,7 +1488,7 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 
 	if totalLines > 0 {
 		for i := startIdx; i < endIdx; i++ {
-			content.WriteString(styles.SubtleText.Render(wrappedLines[i]))
+			content.WriteString(outputLines[i])
 			content.WriteString("\n")
 		}
 		linesShown := endIdx - startIdx
@@ -1515,6 +1509,101 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 		Width(boxWidth)
 
 	return box.Render(content.String())
+}
+
+func renderOutputMatchLabel(status domain.OutputMatchStatus, diffCount int, diffSuffix string) string {
+	switch status {
+	case domain.OutputMatchPass:
+		return styles.SuccessText.Render(" | Output: PASS")
+	case domain.OutputMatchFail:
+		return styles.WarningText.Render(fmt.Sprintf(" | Output: CHECK (%d%s)", diffCount, diffSuffix))
+	case domain.OutputMatchMissing:
+		return styles.ErrorText.Render(" | Output: MISSING")
+	default:
+		return ""
+	}
+}
+
+func renderProcessStatusLine(proc *domain.ProcessResult) string {
+	var b strings.Builder
+	switch {
+	case proc.Running:
+		b.WriteString(styles.Highlight.Render("[RUNNING]"))
+		b.WriteString(styles.SubtleText.Render(" ..."))
+	case proc.Killed:
+		b.WriteString(styles.WarningText.Render("[KILLED]"))
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	case proc.TimedOut:
+		b.WriteString(styles.ErrorText.Render("[TIMEOUT]"))
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	case proc.ExpectedExit != nil:
+		if proc.Passed {
+			b.WriteString(styles.SuccessText.Render(fmt.Sprintf("[PASS] exit %d", proc.ExitCode)))
+		} else {
+			b.WriteString(styles.ErrorText.Render(fmt.Sprintf("[FAIL] exit %d (expected %d)", proc.ExitCode, *proc.ExpectedExit)))
+		}
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	case proc.ExitCode == 0:
+		b.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", proc.ExitCode)))
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	default:
+		b.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", proc.ExitCode)))
+		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	}
+	b.WriteString(renderOutputMatchLabel(proc.OutputMatch, len(proc.OutputDiff), ""))
+	return b.String()
+}
+
+func renderExecuteStatusLine(r domain.ExecuteResult) string {
+	var b strings.Builder
+	if r.TimedOut {
+		b.WriteString(styles.ErrorText.Render("[TIMEOUT] Execution timed out"))
+	} else if r.ExitCode == 0 {
+		b.WriteString(styles.SuccessText.Render(fmt.Sprintf("[OK] exit %d", r.ExitCode)))
+	} else {
+		b.WriteString(styles.WarningText.Render(fmt.Sprintf("[EXIT %d]", r.ExitCode)))
+	}
+	b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" %dms", r.Duration.Milliseconds())))
+	b.WriteString(renderOutputMatchLabel(r.OutputMatch, len(r.OutputDiff), " diffs"))
+	return b.String()
+}
+
+func renderDiffLines(diff []domain.DiffLine, contentWidth int) []string {
+	if len(diff) == 0 {
+		return nil
+	}
+	lineStyle := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth)
+	lines := make([]string, 0, len(diff))
+	for _, d := range diff {
+		var prefix string
+		switch d.Type {
+		case "removed":
+			prefix = "- "
+		case "added":
+			prefix = "+ "
+		default:
+			prefix = "  "
+		}
+		plain := prefix + components.SanitizeDisplay(d.Content)
+		plain = components.TruncateToWidth(plain, contentWidth)
+		switch d.Type {
+		case "removed":
+			lines = append(lines, styles.ErrorText.Render(lineStyle.Render(plain)))
+		case "added":
+			lines = append(lines, styles.SuccessText.Render(lineStyle.Render(plain)))
+		default:
+			lines = append(lines, lineStyle.Render(plain))
+		}
+	}
+	return lines
+}
+
+func appendStderrBlock(lines []string, stderr string, contentWidth int) []string {
+	lines = append(lines, "")
+	lineStyle := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth)
+	lines = append(lines, styles.WarningText.Render(lineStyle.Render("─── stderr ───")))
+	lines = append(lines, components.WrapLines(components.SanitizeDisplay(stderr), contentWidth)...)
+	return lines
 }
 
 func (m Model) renderExport() string {

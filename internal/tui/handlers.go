@@ -577,7 +577,36 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.selectedProcessIdx < numProcs {
 				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
 				proc := m.multiProcessResult.Processes[procName]
-				outputLen := len(strings.Split(proc.Stdout+proc.Stderr, "\n"))
+
+				// Calculate content width for multi-process boxes
+				boxWidth := (m.width - 20) / 2
+				if boxWidth < 30 {
+					boxWidth = 30
+				}
+				contentWidth := boxWidth - 4
+
+				// Calculate output length based on view mode (must match view exactly)
+				var outputLen int
+				if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
+					// Diff view: diff lines + stderr section
+					outputLen = len(proc.OutputDiff)
+					if proc.Stderr != "" {
+						outputLen++ // blank line
+						outputLen++ // "─── stderr ───" separator
+						outputLen += len(components.WrapLines(proc.Stderr, contentWidth))
+					}
+				} else {
+					// Raw view: wrapped stdout + stderr with label (must match view)
+					allOutput := proc.Stdout
+					if proc.Stderr != "" {
+						if allOutput != "" {
+							allOutput += "\nstderr:\n" + proc.Stderr
+						} else {
+							allOutput = "stderr:\n" + proc.Stderr
+						}
+					}
+					outputLen = len(components.WrapLines(allOutput, contentWidth))
+				}
 				maxScroll = outputLen - 8
 				if maxScroll < 0 {
 					maxScroll = 0
@@ -720,7 +749,35 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	outputBoxIdx := maxFocus + 1
 
 	if m.runResult != nil && m.selectedProcessIdx >= 0 {
-		outputLen := len(strings.Split(m.runResult.Stdout+m.runResult.Stderr, "\n"))
+		// Calculate content width same as view
+		boxWidth := m.width - 14
+		if boxWidth < 40 {
+			boxWidth = 40
+		}
+		contentWidth := boxWidth - 4
+
+		// Calculate output length based on view mode (must match view exactly)
+		var outputLen int
+		if m.runResult.OutputMatch == domain.OutputMatchFail && len(m.runResult.OutputDiff) > 0 {
+			// Diff view: diff lines + stderr section
+			outputLen = len(m.runResult.OutputDiff)
+			if m.runResult.Stderr != "" {
+				outputLen++ // blank line
+				outputLen++ // "─── stderr ───" separator
+				outputLen += len(components.WrapLines(m.runResult.Stderr, contentWidth))
+			}
+		} else {
+			// Raw view: wrapped stdout + stderr with label (must match view)
+			allOutput := m.runResult.Stdout
+			if m.runResult.Stderr != "" {
+				if allOutput != "" {
+					allOutput += "\nstderr:\n" + m.runResult.Stderr
+				} else {
+					allOutput = "stderr:\n" + m.runResult.Stderr
+				}
+			}
+			outputLen = len(components.WrapLines(allOutput, contentWidth))
+		}
 		maxScroll := outputLen - 15
 		if maxScroll < 0 {
 			maxScroll = 0

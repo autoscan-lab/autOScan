@@ -98,6 +98,27 @@ func EnsureTestFilesDir() (string, error) {
 	return testDir, nil
 }
 
+// ExpectedOutputsDir returns the expected_outputs directory path
+func ExpectedOutputsDir() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "expected_outputs"), nil
+}
+
+// EnsureExpectedOutputsDir creates the expected_outputs directory
+func EnsureExpectedOutputsDir() (string, error) {
+	expDir, err := ExpectedOutputsDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(expDir, 0755); err != nil {
+		return "", err
+	}
+	return expDir, nil
+}
+
 // SettingsFile returns the settings.yaml path
 func SettingsFile() (string, error) {
 	dir, err := Dir()

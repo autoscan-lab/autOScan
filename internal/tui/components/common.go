@@ -2,26 +2,105 @@ package components
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/felipetrejos/autoscan/internal/tui/styles"
 )
+
+const tabWidth = 8
+
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+func SanitizeDisplay(s string) string {
+	if s == "" {
+		return s
+	}
+	s = ansiRegexp.ReplaceAllString(s, "")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	return s
+}
+
+func expandTabs(s string, width int) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	col := 0
+	for _, r := range s {
+		if r == '\t' {
+			spaces := width - (col % width)
+			if spaces == 0 {
+				spaces = width
+			}
+			b.WriteString(strings.Repeat(" ", spaces))
+			col += spaces
+			continue
+		}
+		b.WriteRune(r)
+		col += lipgloss.Width(string(r))
+	}
+	return b.String()
+}
+
+// TruncateToWidth truncates a string to fit within maxWidth display columns.
+// Uses lipgloss.Width for accurate display width calculation.
+func TruncateToWidth(s string, maxWidth int) string {
+	s = SanitizeDisplay(s)
+	s = expandTabs(s, tabWidth)
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	// Truncate rune by rune until it fits
+	runes := []rune(s)
+	for i := len(runes); i > 0; i-- {
+		truncated := string(runes[:i]) + "..."
+		if lipgloss.Width(truncated) <= maxWidth {
+			return truncated
+		}
+	}
+	return "..."
+}
 
 func WrapLines(text string, width int) []string {
 	if text == "" {
 		return nil
 	}
+	if width <= 0 {
+		return []string{""}
+	}
 	var wrapped []string
 	for _, line := range strings.Split(text, "\n") {
-		if len(line) <= width {
+		line = expandTabs(SanitizeDisplay(line), tabWidth)
+		if lipgloss.Width(line) <= width {
 			wrapped = append(wrapped, line)
 		} else {
-			for len(line) > width {
-				wrapped = append(wrapped, line[:width])
-				line = line[width:]
+			var current strings.Builder
+			currentWidth := 0
+			for _, r := range line {
+				rw := lipgloss.Width(string(r))
+				if currentWidth+rw > width {
+					wrapped = append(wrapped, current.String())
+					current.Reset()
+					currentWidth = 0
+				}
+				current.WriteRune(r)
+				currentWidth += rw
 			}
-			if len(line) > 0 {
-				wrapped = append(wrapped, line)
+			if current.Len() > 0 || len(line) == 0 {
+				wrapped = append(wrapped, current.String())
 			}
 		}
 	}
@@ -119,4 +198,3 @@ func ConfirmDialog(message string) string {
 
 	return b.String()
 }
-

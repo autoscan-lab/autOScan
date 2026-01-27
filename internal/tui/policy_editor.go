@@ -59,16 +59,28 @@ type PolicyEditor struct {
 	existingTests        []string
 	existingTestsCursor  int
 
+	// Expected output files for test cases (single-process)
+	browsingForExpectedOutput     bool
+	showingExistingExpectedOutput bool
+	existingExpectedOutputs       []string
+	existingExpectedOutputsCursor int
+
+	// Expected output files for scenarios (multi-process)
+	browsingForScenarioExpectedOutput     bool
+	showingExistingScenarioExpectedOutput bool
+	scenarioExpectedOutputProcess         string // which process we're selecting for
+
 	testCases          []policy.TestCase
 	testCasesCursor    int
 	editingTestCase    bool
 	editingTestCaseIdx int
 	testCaseInputs     struct {
-		name         textinput.Model
-		args         textinput.Model
-		input        textinput.Model
-		expectedExit textinput.Model
-		focusedInput int
+		name               textinput.Model
+		args               textinput.Model
+		input              textinput.Model
+		expectedExit       textinput.Model
+		expectedOutputFile string
+		focusedInput       int
 	}
 
 	multiProcessEnabled bool
@@ -89,11 +101,12 @@ type PolicyEditor struct {
 	editingScenario        bool
 	editingScenarioIdx     int
 	scenarioInputs         struct {
-		name         textinput.Model
-		processArgs  map[string]textinput.Model
-		processStdin map[string]textinput.Model
-		processExit  map[string]textinput.Model
-		focusedIdx   int
+		name            textinput.Model
+		processArgs     map[string]textinput.Model
+		processStdin    map[string]textinput.Model
+		processExit     map[string]textinput.Model
+		expectedOutputs map[string]string // file paths per process
+		focusedIdx      int
 	}
 
 	focusedField PolicyEditorField
@@ -193,6 +206,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	pe.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	pe.scenarioInputs.processStdin = make(map[string]textinput.Model)
 	pe.scenarioInputs.processExit = make(map[string]textinput.Model)
+	pe.scenarioInputs.expectedOutputs = make(map[string]string)
 
 	return pe
 }
@@ -256,6 +270,13 @@ func (e *PolicyEditor) Reset() {
 	e.testFilesCursor = 0
 	e.browsingForTests = false
 	e.showingExistingTests = false
+	e.browsingForExpectedOutput = false
+	e.showingExistingExpectedOutput = false
+	e.existingExpectedOutputs = nil
+	e.existingExpectedOutputsCursor = 0
+	e.browsingForScenarioExpectedOutput = false
+	e.showingExistingScenarioExpectedOutput = false
+	e.scenarioExpectedOutputProcess = ""
 
 	e.testCases = []policy.TestCase{}
 	e.testCasesCursor = 0
@@ -282,6 +303,7 @@ func (e *PolicyEditor) resetTestCaseInputs() {
 	e.testCaseInputs.args.SetValue("")
 	e.testCaseInputs.input.SetValue("")
 	e.testCaseInputs.expectedExit.SetValue("0")
+	e.testCaseInputs.expectedOutputFile = ""
 	e.testCaseInputs.focusedInput = 0
 	e.testCaseInputs.name.Focus()
 	e.testCaseInputs.args.Blur()
@@ -308,12 +330,17 @@ func (e *PolicyEditor) resetScenarioInputs() {
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
 	e.scenarioInputs.processExit = make(map[string]textinput.Model)
+	e.scenarioInputs.expectedOutputs = make(map[string]string)
+	e.scenarioExpectedOutputProcess = ""
 }
 
 func (e *PolicyEditor) initScenarioProcessInputs() {
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
 	e.scenarioInputs.processExit = make(map[string]textinput.Model)
+	if e.scenarioInputs.expectedOutputs == nil {
+		e.scenarioInputs.expectedOutputs = make(map[string]string)
+	}
 
 	for _, proc := range e.multiProcessExecs {
 		argsInput := textinput.New()
@@ -357,14 +384,14 @@ func (e *PolicyEditor) blurAllScenarioInputs() {
 
 func (e *PolicyEditor) focusCurrentScenarioInput() {
 	numProcesses := len(e.multiProcessExecs)
-	totalFields := 1 + (numProcesses * 3) + 1
+	totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
 
 	if e.scenarioInputs.focusedIdx == 0 {
 		e.scenarioInputs.name.Focus()
 	} else if e.scenarioInputs.focusedIdx < totalFields-1 {
 		fieldOffset := e.scenarioInputs.focusedIdx - 1
-		procIdx := fieldOffset / 3
-		fieldType := fieldOffset % 3
+		procIdx := fieldOffset / 4
+		fieldType := fieldOffset % 4
 
 		if procIdx < len(e.multiProcessExecs) {
 			procName := e.multiProcessExecs[procIdx].Name
@@ -384,6 +411,7 @@ func (e *PolicyEditor) focusCurrentScenarioInput() {
 					input.Focus()
 					e.scenarioInputs.processExit[procName] = input
 				}
+			case 3: // expected output - display only, no text input to focus
 			}
 		}
 	}
@@ -417,6 +445,176 @@ func (e *PolicyEditor) loadExistingTestFiles() {
 			e.existingTests = append(e.existingTests, name)
 		}
 	}
+}
+
+func (e *PolicyEditor) loadExistingExpectedOutputs() {
+	e.existingExpectedOutputs = nil
+	expDir, err := config.ExpectedOutputsDir()
+	if err != nil {
+		return
+	}
+
+	entries, err := os.ReadDir(expDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		e.existingExpectedOutputs = append(e.existingExpectedOutputs, entry.Name())
+	}
+}
+
+func (e *PolicyEditor) copyToExpectedOutputs(selectedPath string) (string, bool) {
+	filename := filepath.Base(selectedPath)
+	expDir, err := config.EnsureExpectedOutputsDir()
+	if err != nil {
+		return "", false
+	}
+	destPath := filepath.Join(expDir, filename)
+	data, err := os.ReadFile(selectedPath)
+	if err != nil {
+		return "", false
+	}
+	if err := os.WriteFile(destPath, data, 0644); err != nil {
+		return "", false
+	}
+	return filename, true
+}
+
+func (e *PolicyEditor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *int, set func(string), close func()) {
+	switch msg.String() {
+	case "esc":
+		close()
+	case "j", "down":
+		if *cursor < len(items)-1 {
+			*cursor++
+		}
+	case "k", "up":
+		if *cursor > 0 {
+			*cursor--
+		}
+	case "enter":
+		if *cursor < len(items) {
+			set(items[*cursor])
+		}
+		close()
+	}
+}
+
+func (e *PolicyEditor) renderBrowsePicker(title, subtitle string, useBox bool) string {
+	var b strings.Builder
+	b.WriteString(styles.HeaderStyle.Render(title))
+	b.WriteString("\n\n")
+
+	if useBox {
+		box := styles.BoxStyle(60)
+		var content strings.Builder
+		if subtitle != "" {
+			content.WriteString(styles.SubtleText.Render(subtitle))
+			content.WriteString("\n\n")
+		}
+		content.WriteString(e.folderBrowser.View())
+		b.WriteString(box.Render(content.String()))
+	} else {
+		if subtitle != "" {
+			b.WriteString(styles.SubtleText.Render(subtitle))
+			b.WriteString("\n\n")
+		}
+		b.WriteString(e.folderBrowser.View())
+	}
+
+	b.WriteString("\n\n")
+	b.WriteString(styles.SubtleText.Render("  enter select  •  esc cancel"))
+	return b.String()
+}
+
+func (e *PolicyEditor) renderInputRow(label string, focused bool, input textinput.Model, hint string) string {
+	var b strings.Builder
+	b.WriteString(components.FocusPrefix(focused))
+	b.WriteString(label)
+	b.WriteString(input.View())
+	if hint != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.SubtleText.Render(hint))
+	}
+	b.WriteString("\n\n")
+	return b.String()
+}
+
+func (e *PolicyEditor) renderValueRow(label string, focused bool, value, empty string) string {
+	var b strings.Builder
+	b.WriteString(components.FocusPrefix(focused))
+	b.WriteString(label)
+	if value != "" {
+		b.WriteString(styles.SuccessText.Render(value))
+	} else {
+		b.WriteString(styles.SubtleText.Render(empty))
+	}
+	b.WriteString("\n\n")
+	return b.String()
+}
+
+func (e *PolicyEditor) renderInputRowTight(label string, focused bool, input textinput.Model) string {
+	var b strings.Builder
+	b.WriteString(components.FocusPrefix(focused))
+	b.WriteString(label)
+	b.WriteString(input.View())
+	b.WriteString("\n")
+	return b.String()
+}
+
+func (e *PolicyEditor) renderValueRowTight(label string, focused bool, value, empty string) string {
+	var b strings.Builder
+	b.WriteString(components.FocusPrefix(focused))
+	b.WriteString(label)
+	if value != "" {
+		b.WriteString(styles.SuccessText.Render(value))
+	} else {
+		b.WriteString(styles.SubtleText.Render(empty))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+func (e *PolicyEditor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
+	var b strings.Builder
+	b.WriteString(styles.HeaderStyle.Render(title))
+	b.WriteString("\n\n")
+
+	box := styles.BoxStyle(boxWidth)
+	var content strings.Builder
+	if subtitle != "" {
+		content.WriteString(styles.SubtleText.Render(subtitle))
+		content.WriteString("\n\n")
+	}
+
+	if len(items) == 0 {
+		content.WriteString(styles.SubtleText.Render(emptyMsg))
+		if !strings.HasSuffix(emptyMsg, "\n") {
+			content.WriteString("\n")
+		}
+	} else {
+		start, end := e.getScrollWindow(cursor, len(items), maxVisible)
+		for i := start; i < end; i++ {
+			item := items[i]
+			if i == cursor {
+				content.WriteString("> " + styles.SelectedItem.Render(item) + "\n")
+			} else {
+				content.WriteString("  " + styles.NormalItem.Render(item) + "\n")
+			}
+		}
+		if showCount && len(items) > maxVisible {
+			content.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  [%d-%d of %d]\n", start+1, end, len(items))))
+		}
+	}
+
+	b.WriteString(box.Render(content.String()))
+	b.WriteString("\n\n")
+	b.WriteString(styles.SubtleText.Render("  ↑↓ navigate  •  enter select  •  esc cancel"))
+	return b.String()
 }
 
 func (e *PolicyEditor) loadExistingLibraries() {
@@ -456,28 +654,13 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 	if e.showingExistingLibs {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				e.showingExistingLibs = false
-				return nil
-			case "j", "down":
-				if e.existingLibsCursor < len(e.existingLibs)-1 {
-					e.existingLibsCursor++
-				}
-				return nil
-			case "k", "up":
-				if e.existingLibsCursor > 0 {
-					e.existingLibsCursor--
-				}
-				return nil
-			case "enter":
-				if e.existingLibsCursor < len(e.existingLibs) {
-					// Add selected library to policy
-					e.libraryFiles = append(e.libraryFiles, e.existingLibs[e.existingLibsCursor])
-				}
-				e.showingExistingLibs = false
-				return nil
-			}
+			e.handleExistingPicker(
+				msg,
+				e.existingLibs,
+				&e.existingLibsCursor,
+				func(item string) { e.libraryFiles = append(e.libraryFiles, item) },
+				func() { e.showingExistingLibs = false },
+			)
 		}
 		return nil
 	}
@@ -577,27 +760,50 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 	if e.showingExistingTests {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				e.showingExistingTests = false
-				return nil
-			case "j", "down":
-				if e.existingTestsCursor < len(e.existingTests)-1 {
-					e.existingTestsCursor++
-				}
-				return nil
-			case "k", "up":
-				if e.existingTestsCursor > 0 {
-					e.existingTestsCursor--
-				}
-				return nil
-			case "enter":
-				if e.existingTestsCursor < len(e.existingTests) {
-					e.testFiles = append(e.testFiles, e.existingTests[e.existingTestsCursor])
-				}
-				e.showingExistingTests = false
+			e.handleExistingPicker(
+				msg,
+				e.existingTests,
+				&e.existingTestsCursor,
+				func(item string) { e.testFiles = append(e.testFiles, item) },
+				func() { e.showingExistingTests = false },
+			)
+		}
+		return nil
+	}
+
+	// ─── SUB-MODE: Browsing for expected output file ───
+	if e.browsingForExpectedOutput {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "esc" {
+				e.browsingForExpectedOutput = false
 				return nil
 			}
+
+			selected, cmd := e.folderBrowser.Update(msg)
+			if selected {
+				if filename, ok := e.copyToExpectedOutputs(e.folderBrowser.Selected()); ok {
+					e.testCaseInputs.expectedOutputFile = filename
+				}
+				e.browsingForExpectedOutput = false
+				return nil
+			}
+			return cmd
+		}
+		return nil
+	}
+
+	// ─── SUB-MODE: Picking existing expected output file ───
+	if e.showingExistingExpectedOutput {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			e.handleExistingPicker(
+				msg,
+				e.existingExpectedOutputs,
+				&e.existingExpectedOutputsCursor,
+				func(filename string) { e.testCaseInputs.expectedOutputFile = filename },
+				func() { e.showingExistingExpectedOutput = false },
+			)
 		}
 		return nil
 	}
@@ -617,7 +823,7 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 				e.testCaseInputs.args.Blur()
 				e.testCaseInputs.input.Blur()
 				e.testCaseInputs.expectedExit.Blur()
-				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 1) % 5
+				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 1) % 6
 				switch e.testCaseInputs.focusedInput {
 				case 0:
 					e.testCaseInputs.name.Focus()
@@ -634,7 +840,7 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 				e.testCaseInputs.args.Blur()
 				e.testCaseInputs.input.Blur()
 				e.testCaseInputs.expectedExit.Blur()
-				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 4) % 5
+				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 5) % 6
 				switch e.testCaseInputs.focusedInput {
 				case 0:
 					e.testCaseInputs.name.Focus()
@@ -646,11 +852,35 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 					e.testCaseInputs.expectedExit.Focus()
 				}
 				return nil
-			case "enter":
+			case "a":
 				if e.testCaseInputs.focusedInput == 4 {
+					cwd, _ := os.Getwd()
+					e.folderBrowser.Reset(cwd)
+					e.folderBrowser.SetFileMode(true)
+					e.folderBrowser.SetFileExtensions([]string{".txt", ".out", ".expected", ".log"})
+					e.browsingForExpectedOutput = true
+					return nil
+				}
+			case "e":
+				if e.testCaseInputs.focusedInput == 4 {
+					e.loadExistingExpectedOutputs()
+					e.existingExpectedOutputsCursor = 0
+					if len(e.existingExpectedOutputs) > 0 {
+						e.showingExistingExpectedOutput = true
+					}
+					return nil
+				}
+			case "d":
+				if e.testCaseInputs.focusedInput == 4 {
+					e.testCaseInputs.expectedOutputFile = ""
+					return nil
+				}
+			case "enter":
+				if e.testCaseInputs.focusedInput == 5 {
 					tc := policy.TestCase{
-						Name:  e.testCaseInputs.name.Value(),
-						Input: e.testCaseInputs.input.Value(),
+						Name:               e.testCaseInputs.name.Value(),
+						Input:              e.testCaseInputs.input.Value(),
+						ExpectedOutputFile: e.testCaseInputs.expectedOutputFile,
 					}
 					if tc.Name == "" {
 						tc.Name = fmt.Sprintf("Test %d", len(e.testCases)+1)
@@ -788,12 +1018,67 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 
+	// ─── SUB-MODE: Browsing for scenario expected output file ───
+	if e.browsingForScenarioExpectedOutput {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "esc" {
+				e.browsingForScenarioExpectedOutput = false
+				e.scenarioExpectedOutputProcess = ""
+				return nil
+			}
+
+			selected, cmd := e.folderBrowser.Update(msg)
+			if selected {
+				if filename, ok := e.copyToExpectedOutputs(e.folderBrowser.Selected()); ok {
+					e.scenarioInputs.expectedOutputs[e.scenarioExpectedOutputProcess] = filename
+				}
+				e.browsingForScenarioExpectedOutput = false
+				e.scenarioExpectedOutputProcess = ""
+				return nil
+			}
+			return cmd
+		}
+		return nil
+	}
+
+	// ─── SUB-MODE: Selecting existing expected output for scenario ───
+	if e.showingExistingScenarioExpectedOutput {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			e.handleExistingPicker(
+				msg,
+				e.existingExpectedOutputs,
+				&e.existingExpectedOutputsCursor,
+				func(filename string) { e.scenarioInputs.expectedOutputs[e.scenarioExpectedOutputProcess] = filename },
+				func() {
+					e.showingExistingScenarioExpectedOutput = false
+					e.scenarioExpectedOutputProcess = ""
+				},
+			)
+		}
+		return nil
+	}
+
 	// ─── SUB-MODE: Test scenario editor form ───
 	if e.editingScenario {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			numProcesses := len(e.multiProcessExecs)
-			totalFields := 1 + (numProcesses * 3) + 1
+			totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
+
+			// Check if we're on an expected output field
+			isOnExpectedOutput := false
+			var currentProcName string
+			if e.scenarioInputs.focusedIdx > 0 && e.scenarioInputs.focusedIdx < totalFields-1 {
+				fieldOffset := e.scenarioInputs.focusedIdx - 1
+				procIdx := fieldOffset / 4
+				fieldType := fieldOffset % 4
+				if fieldType == 3 && procIdx < len(e.multiProcessExecs) {
+					isOnExpectedOutput = true
+					currentProcName = e.multiProcessExecs[procIdx].Name
+				}
+			}
 
 			switch msg.String() {
 			case "esc":
@@ -811,14 +1096,40 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 				e.scenarioInputs.focusedIdx = (e.scenarioInputs.focusedIdx + totalFields - 1) % totalFields
 				e.focusCurrentScenarioInput()
 				return nil
+			case "a":
+				if isOnExpectedOutput {
+					cwd, _ := os.Getwd()
+					e.folderBrowser.Reset(cwd)
+					e.folderBrowser.SetFileMode(true)
+					e.folderBrowser.SetFileExtensions([]string{".txt", ".out", ".expected", ".log"})
+					e.browsingForScenarioExpectedOutput = true
+					e.scenarioExpectedOutputProcess = currentProcName
+					return nil
+				}
+			case "e":
+				if isOnExpectedOutput {
+					e.loadExistingExpectedOutputs()
+					if len(e.existingExpectedOutputs) > 0 {
+						e.showingExistingScenarioExpectedOutput = true
+						e.scenarioExpectedOutputProcess = currentProcName
+						e.existingExpectedOutputsCursor = 0
+					}
+					return nil
+				}
+			case "d":
+				if isOnExpectedOutput {
+					delete(e.scenarioInputs.expectedOutputs, currentProcName)
+					return nil
+				}
 			case "enter":
 				saveIdx := totalFields - 1
 				if e.scenarioInputs.focusedIdx == saveIdx {
 					scenario := policy.MultiProcessScenario{
-						Name:          e.scenarioInputs.name.Value(),
-						ProcessArgs:   make(map[string][]string),
-						ProcessInputs: make(map[string]string),
-						ExpectedExits: make(map[string]int),
+						Name:            e.scenarioInputs.name.Value(),
+						ProcessArgs:     make(map[string][]string),
+						ProcessInputs:   make(map[string]string),
+						ExpectedExits:   make(map[string]int),
+						ExpectedOutputs: make(map[string]string),
 					}
 					if scenario.Name == "" {
 						scenario.Name = fmt.Sprintf("Scenario %d", len(e.testScenarios)+1)
@@ -843,6 +1154,9 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 								}
 							}
 						}
+						if expOut, ok := e.scenarioInputs.expectedOutputs[proc.Name]; ok && expOut != "" {
+							scenario.ExpectedOutputs[proc.Name] = expOut
+						}
 					}
 
 					if e.editingScenarioIdx >= 0 && e.editingScenarioIdx < len(e.testScenarios) {
@@ -857,13 +1171,14 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 
+			// Handle text input updates (only for text input fields, not expected output)
 			var cmd tea.Cmd
 			if e.scenarioInputs.focusedIdx == 0 {
 				e.scenarioInputs.name, cmd = e.scenarioInputs.name.Update(msg)
-			} else if e.scenarioInputs.focusedIdx < totalFields-1 {
+			} else if e.scenarioInputs.focusedIdx < totalFields-1 && !isOnExpectedOutput {
 				fieldOffset := e.scenarioInputs.focusedIdx - 1
-				procIdx := fieldOffset / 3
-				fieldType := fieldOffset % 3
+				procIdx := fieldOffset / 4
+				fieldType := fieldOffset % 4
 
 				if procIdx < len(e.multiProcessExecs) {
 					procName := e.multiProcessExecs[procIdx].Name
@@ -986,6 +1301,9 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 								e.scenarioInputs.processExit[proc.Name] = input
 							}
 						}
+						if expOut, ok := scenario.ExpectedOutputs[proc.Name]; ok {
+							e.scenarioInputs.expectedOutputs[proc.Name] = expOut
+						}
 					}
 					e.scenarioInputs.focusedIdx = 0
 					e.scenarioInputs.name.Focus()
@@ -1064,6 +1382,7 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 					} else {
 						e.testCaseInputs.expectedExit.SetValue("0")
 					}
+					e.testCaseInputs.expectedOutputFile = tc.ExpectedOutputFile
 					e.testCaseInputs.focusedInput = 0
 					e.testCaseInputs.name.Focus()
 				}
@@ -1299,10 +1618,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 		sourceFile := strings.TrimSpace(e.sourceFileInput.Value())
 
 		type TestCaseYAML struct {
-			Name         string   `yaml:"name,omitempty"`
-			Args         []string `yaml:"args,omitempty"`
-			Input        string   `yaml:"input,omitempty"`
-			ExpectedExit *int     `yaml:"expected_exit,omitempty"`
+			Name               string   `yaml:"name,omitempty"`
+			Args               []string `yaml:"args,omitempty"`
+			Input              string   `yaml:"input,omitempty"`
+			ExpectedExit       *int     `yaml:"expected_exit,omitempty"`
+			ExpectedOutputFile string   `yaml:"expected_output_file,omitempty"`
 		}
 
 		p := struct {
@@ -1330,10 +1650,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 						StartDelayMs int      `yaml:"start_delay_ms,omitempty"`
 					} `yaml:"executables"`
 					TestScenarios []struct {
-						Name          string              `yaml:"name"`
-						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
-						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+						Name            string              `yaml:"name"`
+						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
+						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					} `yaml:"test_scenarios,omitempty"`
 				} `yaml:"multi_process,omitempty"`
 			} `yaml:"run,omitempty"`
@@ -1354,10 +1675,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 		if len(e.testCases) > 0 || len(e.multiProcessExecs) > 0 {
 			for _, tc := range e.testCases {
 				p.Run.TestCases = append(p.Run.TestCases, TestCaseYAML{
-					Name:         tc.Name,
-					Args:         tc.Args,
-					Input:        tc.Input,
-					ExpectedExit: tc.ExpectedExit,
+					Name:               tc.Name,
+					Args:               tc.Args,
+					Input:              tc.Input,
+					ExpectedExit:       tc.ExpectedExit,
+					ExpectedOutputFile: tc.ExpectedOutputFile,
 				})
 			}
 
@@ -1372,10 +1694,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 						StartDelayMs int      `yaml:"start_delay_ms,omitempty"`
 					} `yaml:"executables"`
 					TestScenarios []struct {
-						Name          string              `yaml:"name"`
-						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
-						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+						Name            string              `yaml:"name"`
+						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
+						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					} `yaml:"test_scenarios,omitempty"`
 				}{
 					Enabled: true,
@@ -1397,15 +1720,17 @@ func (e *PolicyEditor) save() tea.Cmd {
 				}
 				for _, scenario := range e.testScenarios {
 					p.Run.MultiProcess.TestScenarios = append(p.Run.MultiProcess.TestScenarios, struct {
-						Name          string              `yaml:"name"`
-						ProcessArgs   map[string][]string `yaml:"process_args,omitempty"`
-						ProcessInputs map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits map[string]int      `yaml:"expected_exits,omitempty"`
+						Name            string              `yaml:"name"`
+						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
+						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
+						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
+						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					}{
-						Name:          scenario.Name,
-						ProcessArgs:   scenario.ProcessArgs,
-						ProcessInputs: scenario.ProcessInputs,
-						ExpectedExits: scenario.ExpectedExits,
+						Name:            scenario.Name,
+						ProcessArgs:     scenario.ProcessArgs,
+						ProcessInputs:   scenario.ProcessInputs,
+						ExpectedExits:   scenario.ExpectedExits,
+						ExpectedOutputs: scenario.ExpectedOutputs,
 					})
 				}
 			}
@@ -1498,6 +1823,23 @@ func (e *PolicyEditor) View() string {
 		return b.String()
 	}
 
+	if e.browsingForExpectedOutput {
+		return e.renderBrowsePicker("Select Expected Output File", "", false)
+	}
+
+	if e.showingExistingExpectedOutput {
+		return e.renderExistingPicker(
+			"Select Existing Expected Output",
+			"",
+			"No expected output files found.\nAdd files to ~/.config/autoscan/expected_outputs/",
+			e.existingExpectedOutputs,
+			e.existingExpectedOutputsCursor,
+			60,
+			8,
+			false,
+		)
+	}
+
 	if e.editingTestCase {
 		var b strings.Builder
 		if e.editingTestCaseIdx >= 0 {
@@ -1510,36 +1852,38 @@ func (e *PolicyEditor) View() string {
 		box := styles.BoxStyle(80)
 		var content strings.Builder
 
-		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 0))
-		content.WriteString("Name:          ")
-		content.WriteString(e.testCaseInputs.name.View())
-		content.WriteString("\n\n")
-
-		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 1))
-		content.WriteString("Arguments:     ")
-		content.WriteString(e.testCaseInputs.args.View())
-		content.WriteString("\n")
-		content.WriteString(styles.SubtleText.Render("                   (space-separated)"))
-		content.WriteString("\n\n")
-
-		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 2))
-		content.WriteString("Stdin:         ")
-		content.WriteString(e.testCaseInputs.input.View())
-		content.WriteString("\n")
-		content.WriteString(styles.SubtleText.Render("                   (use \\n for newlines)"))
-		content.WriteString("\n\n")
-
-		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 3))
-		content.WriteString("Expected Exit: ")
-		content.WriteString(e.testCaseInputs.expectedExit.View())
-		content.WriteString("\n\n")
+		content.WriteString(e.renderInputRow("Name:          ", e.testCaseInputs.focusedInput == 0, e.testCaseInputs.name, ""))
+		content.WriteString(e.renderInputRow(
+			"Arguments:     ",
+			e.testCaseInputs.focusedInput == 1,
+			e.testCaseInputs.args,
+			"                   (space-separated)",
+		))
+		content.WriteString(e.renderInputRow(
+			"Stdin:         ",
+			e.testCaseInputs.focusedInput == 2,
+			e.testCaseInputs.input,
+			"                   (use \\n for newlines)",
+		))
+		content.WriteString(e.renderInputRow(
+			"Expected Exit: ",
+			e.testCaseInputs.focusedInput == 3,
+			e.testCaseInputs.expectedExit,
+			"",
+		))
+		content.WriteString(e.renderValueRow(
+			"Expected Output: ",
+			e.testCaseInputs.focusedInput == 4,
+			e.testCaseInputs.expectedOutputFile,
+			"(none)",
+		))
 
 		buttonText := "[ Add Test Case ]"
 		if e.editingTestCaseIdx >= 0 {
 			buttonText = "[ Save Changes ]"
 		}
-		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 4))
-		if e.testCaseInputs.focusedInput == 4 {
+		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 5))
+		if e.testCaseInputs.focusedInput == 5 {
 			content.WriteString(styles.SelectedItem.Render(buttonText))
 		} else {
 			content.WriteString(styles.NormalItem.Render(buttonText))
@@ -1547,9 +1891,30 @@ func (e *PolicyEditor) View() string {
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter add  •  esc cancel"))
+		if e.testCaseInputs.focusedInput == 4 {
+			b.WriteString(styles.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
+		} else {
+			b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+		}
 
 		return b.String()
+	}
+
+	if e.browsingForScenarioExpectedOutput {
+		return e.renderBrowsePicker(fmt.Sprintf("Select Expected Output for %s", e.scenarioExpectedOutputProcess), "", false)
+	}
+
+	if e.showingExistingScenarioExpectedOutput {
+		return e.renderExistingPicker(
+			fmt.Sprintf("Select Existing Expected Output for %s", e.scenarioExpectedOutputProcess),
+			"Expected outputs in ~/.config/autoscan/expected_outputs/",
+			"  (no existing expected outputs)",
+			e.existingExpectedOutputs,
+			e.existingExpectedOutputsCursor,
+			70,
+			8,
+			false,
+		)
 	}
 
 	if e.editingScenario {
@@ -1562,7 +1927,7 @@ func (e *PolicyEditor) View() string {
 		b.WriteString("\n\n")
 
 		numProcesses := len(e.multiProcessExecs)
-		totalFields := 1 + (numProcesses * 3) + 1
+		totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
 		saveIdx := totalFields - 1
 
 		box := styles.BoxStyle(90)
@@ -1581,30 +1946,25 @@ func (e *PolicyEditor) View() string {
 			content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
 			content.WriteString("\n")
 
-			argsIdx := 1 + (i * 3)
-			stdinIdx := 2 + (i * 3)
-			exitIdx := 3 + (i * 3)
+			argsIdx := 1 + (i * 4)
+			stdinIdx := 2 + (i * 4)
+			exitIdx := 3 + (i * 4)
+			expOutIdx := 4 + (i * 4)
 
-			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == argsIdx))
-			content.WriteString("    Args:  ")
 			if input, ok := e.scenarioInputs.processArgs[proc.Name]; ok {
-				content.WriteString(input.View())
+				content.WriteString(e.renderInputRowTight("    Args:     ", e.scenarioInputs.focusedIdx == argsIdx, input))
 			}
-			content.WriteString("\n")
-
-			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == stdinIdx))
-			content.WriteString("    Stdin: ")
 			if input, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
-				content.WriteString(input.View())
+				content.WriteString(e.renderInputRowTight("    Stdin:    ", e.scenarioInputs.focusedIdx == stdinIdx, input))
 			}
-			content.WriteString("\n")
-
-			content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == exitIdx))
-			content.WriteString("    Exit:  ")
 			if input, ok := e.scenarioInputs.processExit[proc.Name]; ok {
-				content.WriteString(input.View())
+				content.WriteString(e.renderInputRowTight("    Exit:     ", e.scenarioInputs.focusedIdx == exitIdx, input))
 			}
-			content.WriteString("\n\n")
+			if expOut, ok := e.scenarioInputs.expectedOutputs[proc.Name]; ok {
+				content.WriteString(e.renderValueRowTight("    Expected: ", e.scenarioInputs.focusedIdx == expOutIdx, expOut, "(none)"))
+			} else {
+				content.WriteString(e.renderValueRowTight("    Expected: ", e.scenarioInputs.focusedIdx == expOutIdx, "", "(none)"))
+			}
 		}
 
 		buttonText := "[ Add Scenario ]"
@@ -1620,115 +1980,55 @@ func (e *PolicyEditor) View() string {
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+		// Check if on expected output field
+		isOnExpectedOutput := false
+		if e.scenarioInputs.focusedIdx > 0 && e.scenarioInputs.focusedIdx < saveIdx {
+			fieldOffset := e.scenarioInputs.focusedIdx - 1
+			if fieldOffset%4 == 3 {
+				isOnExpectedOutput = true
+			}
+		}
+		if isOnExpectedOutput {
+			b.WriteString(styles.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
+		} else {
+			b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+		}
 
 		return b.String()
 	}
 
 	if e.showingExistingLibs {
-		var b strings.Builder
-		b.WriteString(styles.HeaderStyle.Render("Select Existing Library"))
-		b.WriteString("\n\n")
-
-		box := styles.BoxStyle(70)
-		var content strings.Builder
-		content.WriteString(styles.SubtleText.Render("Libraries bundled in ~/.config/autoscan/libraries/"))
-		content.WriteString("\n\n")
-
-		if len(e.existingLibs) == 0 {
-			content.WriteString(styles.SubtleText.Render("  (no existing libraries available)\n"))
-		} else {
-			maxVisible := 8
-			start, end := e.getScrollWindow(e.existingLibsCursor, len(e.existingLibs), maxVisible)
-			for i := start; i < end; i++ {
-				lib := e.existingLibs[i]
-				if i == e.existingLibsCursor {
-					content.WriteString("> " + styles.SelectedItem.Render(lib) + "\n")
-				} else {
-					content.WriteString("  " + styles.NormalItem.Render(lib) + "\n")
-				}
-			}
-			if len(e.existingLibs) > maxVisible {
-				content.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  [%d-%d of %d]\n", start+1, end, len(e.existingLibs))))
-			}
-		}
-
-		b.WriteString(box.Render(content.String()))
-		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  ↑↓ navigate  •  enter select  •  esc cancel"))
-
-		return b.String()
+		return e.renderExistingPicker(
+			"Select Existing Library",
+			"Libraries bundled in ~/.config/autoscan/libraries/",
+			"  (no existing libraries available)",
+			e.existingLibs,
+			e.existingLibsCursor,
+			70,
+			8,
+			true,
+		)
 	}
 
 	if e.browsingForLibs {
-		var b strings.Builder
-		b.WriteString(styles.HeaderStyle.Render("Browse for Library File"))
-		b.WriteString("\n\n")
-
-		box := styles.BoxStyle(60)
-		var content strings.Builder
-		content.WriteString(styles.SubtleText.Render("Select a .c or .h file to add"))
-		content.WriteString("\n\n")
-		content.WriteString(e.folderBrowser.View())
-		b.WriteString(box.Render(content.String()))
-
-		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  enter select  •  esc cancel"))
-
-		return b.String()
+		return e.renderBrowsePicker("Browse for Library File", "Select a .c or .h file to add", true)
 	}
 
 	if e.browsingForTests {
-		var b strings.Builder
-		b.WriteString(styles.HeaderStyle.Render("Browse for Test File"))
-		b.WriteString("\n\n")
-
-		box := styles.BoxStyle(60)
-		var content strings.Builder
-		content.WriteString(styles.SubtleText.Render("Select a test input file to bundle"))
-		content.WriteString("\n\n")
-		content.WriteString(e.folderBrowser.View())
-		b.WriteString(box.Render(content.String()))
-
-		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  enter select  •  esc cancel"))
-
-		return b.String()
+		return e.renderBrowsePicker("Browse for Test File", "Select a test input file to bundle", true)
 	}
 
 	if e.showingExistingTests {
-		var b strings.Builder
-		b.WriteString(styles.HeaderStyle.Render("Select Existing Test File"))
-		b.WriteString("\n\n")
-
-		box := styles.BoxStyle(70)
-		var content strings.Builder
-		content.WriteString(styles.SubtleText.Render("Test files bundled in ~/.config/autoscan/test_files/"))
-		content.WriteString("\n\n")
-
-		if len(e.existingTests) == 0 {
-			content.WriteString(styles.SubtleText.Render("  (no existing test files available)\n"))
-		} else {
-			maxVisible := 8
-			start, end := e.getScrollWindow(e.existingTestsCursor, len(e.existingTests), maxVisible)
-			for i := start; i < end; i++ {
-				tf := e.existingTests[i]
-				if i == e.existingTestsCursor {
-					content.WriteString("> " + styles.SelectedItem.Render(tf) + "\n")
-				} else {
-					content.WriteString("  " + styles.NormalItem.Render(tf) + "\n")
-				}
-			}
-			if len(e.existingTests) > maxVisible {
-				content.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  [%d-%d of %d]\n", start+1, end, len(e.existingTests))))
-			}
-		}
-
-		b.WriteString(box.Render(content.String()))
-		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("  ↑↓ navigate  •  enter select  •  esc cancel"))
-
-		return b.String()
+		return e.renderExistingPicker(
+			"Select Existing Test File",
+			"Test files bundled in ~/.config/autoscan/test_files/",
+			"  (no existing test files available)",
+			e.existingTests,
+			e.existingTestsCursor,
+			70,
+			8,
+			true,
+		)
 	}
 
 	var b strings.Builder
@@ -2121,6 +2421,8 @@ func (e *PolicyEditor) View() string {
 func (e *PolicyEditor) InSubMode() bool {
 	return e.browsingForLibs || e.browsingForTests ||
 		e.showingExistingLibs || e.showingExistingTests ||
+		e.browsingForExpectedOutput || e.showingExistingExpectedOutput ||
+		e.browsingForScenarioExpectedOutput || e.showingExistingScenarioExpectedOutput ||
 		e.editingTestCase || e.editingProcess || e.editingScenario
 }
 
