@@ -16,14 +16,15 @@
   - Flags persist to Results tab and exports (JSON/CSV)
   - Configurable threshold (default 70%)
 
-- [ ] **Expected Output Comparison**
+- [x] **Expected Output Comparison**
   - Add `expected_output_file` to policy test cases
   - For multi-process: `expected_outputs` map per process in test scenarios
   - Git-style inline diff view in Run tab
   - Exact match: show "PASS - Matches expected output"
   - Mismatch: show "CHECK" with diff count and inline diff
-  - Reference files stored in test_files/
+  - Reference files stored in expected_outputs/
   - Per-process diff display for multi-process execution
+  - Stderr shown below diff when present
 
 ## Low Priority
 
