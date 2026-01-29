@@ -3,3 +3,8 @@
 short_names: true
 keep_binaries: true
 max_workers: 0  # 0 = use all CPUs, set to 2-4 for resource-constrained environments
+
+# Plagiarism detection (Tree-sitter window-hash)
+plagiarism_window_size: 6
+plagiarism_min_func_tokens: 14
+plagiarism_score_threshold: 0.6

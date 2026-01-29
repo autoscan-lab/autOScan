@@ -85,7 +85,32 @@ type (
 	multiProcessResultMsg  struct{ result *domain.MultiProcessResult }
 	multiProcessUpdateMsg  struct{ result *domain.MultiProcessResult }
 	multiProcessTickMsg    struct{}
+	similarityStartedMsg   struct {
+		process string
+		runID   int64
+	}
+	similarityComputedMsg  struct {
+		process string
+		pairs   []SimilarityPair
+		runID   int64
+	}
+	similarityErrorMsg struct {
+		process string
+		err     error
+		runID   int64
+	}
 )
+
+type SimilarityComputeState int
+
+const (
+	SimilarityNotStarted SimilarityComputeState = iota
+	SimilarityComputing
+	SimilarityDone
+	SimilarityError
+)
+
+type SimilarityPair = domain.SimilarityPairResult
 
 type Model struct {
 	currentView View
@@ -122,6 +147,7 @@ type Model struct {
 	completed   int
 	spinner     spinner.Model
 	runError    string
+	runID       int64
 
 	cursor       int
 	scrollOffset int
@@ -150,6 +176,16 @@ type Model struct {
 	multiProcessUpdateChan <-chan *domain.MultiProcessResult
 	outputScroll           int
 	selectedProcessIdx     int
+
+	submissionsTab           int
+	similarityProcessNames   []string
+	similaritySelectedProc   int
+	similarityPairsByProcess map[string][]SimilarityPair
+	similarityStateByProcess map[string]SimilarityComputeState
+	similarityErrorByProcess map[string]string
+	similarityInFlight       map[string]bool
+	similarityCursor         int
+	similarityScroll         int
 
 	exportCursor int
 	statusMsg    string
@@ -210,6 +246,12 @@ func New(cfg Config) Model {
 		runStdinInput: runStdinInput,
 		eyeAnimation:  components.NewEyeAnimation(),
 		helpPanel:     helpPanel,
+		submissionsTab:           0,
+		similaritySelectedProc:   0,
+		similarityPairsByProcess: make(map[string][]SimilarityPair),
+		similarityStateByProcess: make(map[string]SimilarityComputeState),
+		similarityErrorByProcess: make(map[string]string),
+		similarityInFlight:       make(map[string]bool),
 	}
 }
 

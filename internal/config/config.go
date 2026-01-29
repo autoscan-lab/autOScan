@@ -18,6 +18,9 @@ type Settings struct {
 	ShortNames bool `yaml:"short_names"`
 	KeepBinaries bool `yaml:"keep_binaries"`
 	MaxWorkers int `yaml:"max_workers"`
+	PlagiarismWindowSize int `yaml:"plagiarism_window_size"`
+	PlagiarismMinFuncTokens int `yaml:"plagiarism_min_func_tokens"`
+	PlagiarismScoreThreshold float64 `yaml:"plagiarism_score_threshold"`
 }
 
 // DefaultSettings returns the default settings
@@ -26,6 +29,9 @@ func DefaultSettings() Settings {
 		ShortNames:   true,
 		KeepBinaries: false,
 		MaxWorkers:   0, // 0 = use all CPUs
+		PlagiarismWindowSize: 6,
+		PlagiarismMinFuncTokens: 14,
+		PlagiarismScoreThreshold: 0.6,
 	}
 }
 

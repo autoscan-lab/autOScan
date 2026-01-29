@@ -82,12 +82,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.completed = len(m.results)
 		m.runError = ""
 
+		m.submissionsTab = 0
+		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
+		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
+		m.similarityErrorByProcess = make(map[string]string)
+		m.similarityInFlight = make(map[string]bool)
+		m.similarityCursor = 0
+		m.similarityScroll = 0
+		m.initSimilarityProcesses()
+
 	case errorMsg:
 		m.runError = msg.Error()
 		m.isRunning = false
 
 	case exportDoneMsg:
 		m.statusMsg = fmt.Sprintf("Exported to %s", msg.path)
+
+	case similarityStartedMsg:
+		if msg.runID == m.runID {
+			m.similarityStateByProcess[msg.process] = SimilarityComputing
+			delete(m.similarityErrorByProcess, msg.process)
+		}
+
+	case similarityComputedMsg:
+		if msg.runID == m.runID {
+			m.similarityPairsByProcess[msg.process] = msg.pairs
+			m.similarityStateByProcess[msg.process] = SimilarityDone
+			delete(m.similarityErrorByProcess, msg.process)
+			delete(m.similarityInFlight, msg.process)
+		}
+
+	case similarityErrorMsg:
+		if msg.runID == m.runID {
+			m.similarityStateByProcess[msg.process] = SimilarityError
+			m.similarityErrorByProcess[msg.process] = msg.err.Error()
+			delete(m.similarityInFlight, msg.process)
+		}
 
 	case policySavedMsg:
 		m.currentView = ViewPolicyManage
@@ -305,7 +335,7 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
-		if m.settingsCursor < 2 {
+		if m.settingsCursor < 5 {
 			m.settingsCursor++
 		}
 	case "k", "up":
@@ -318,25 +348,75 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settings.ShortNames = !m.settings.ShortNames
 		case 1:
 			m.settings.KeepBinaries = !m.settings.KeepBinaries
+		default:
+			return m, nil
 		}
 		config.SaveSettings(m.settings)
 	case "+", "=":
-		if m.settingsCursor == 2 {
+		switch m.settingsCursor {
+		case 2:
 			if m.settings.MaxWorkers < 32 {
 				m.settings.MaxWorkers++
 				config.SaveSettings(m.settings)
 			}
+		case 3:
+			if m.settings.PlagiarismWindowSize < 64 {
+				m.settings.PlagiarismWindowSize++
+				config.SaveSettings(m.settings)
+			}
+		case 4:
+			if m.settings.PlagiarismMinFuncTokens < 1024 {
+				m.settings.PlagiarismMinFuncTokens++
+				config.SaveSettings(m.settings)
+			}
+		case 5:
+			if m.settings.PlagiarismScoreThreshold < 1.0 {
+				m.settings.PlagiarismScoreThreshold += 0.05
+				if m.settings.PlagiarismScoreThreshold > 1.0 {
+					m.settings.PlagiarismScoreThreshold = 1.0
+				}
+				config.SaveSettings(m.settings)
+			}
 		}
 	case "-", "_":
-		if m.settingsCursor == 2 {
+		switch m.settingsCursor {
+		case 2:
 			if m.settings.MaxWorkers > 0 {
 				m.settings.MaxWorkers--
 				config.SaveSettings(m.settings)
 			}
+		case 3:
+			if m.settings.PlagiarismWindowSize > 1 {
+				m.settings.PlagiarismWindowSize--
+				config.SaveSettings(m.settings)
+			}
+		case 4:
+			if m.settings.PlagiarismMinFuncTokens > 1 {
+				m.settings.PlagiarismMinFuncTokens--
+				config.SaveSettings(m.settings)
+			}
+		case 5:
+			if m.settings.PlagiarismScoreThreshold > 0.0 {
+				m.settings.PlagiarismScoreThreshold -= 0.05
+				if m.settings.PlagiarismScoreThreshold < 0.0 {
+					m.settings.PlagiarismScoreThreshold = 0.0
+				}
+				config.SaveSettings(m.settings)
+			}
 		}
 	case "0":
-		if m.settingsCursor == 2 {
+		switch m.settingsCursor {
+		case 2:
 			m.settings.MaxWorkers = 0
+			config.SaveSettings(m.settings)
+		case 3:
+			m.settings.PlagiarismWindowSize = 6
+			config.SaveSettings(m.settings)
+		case 4:
+			m.settings.PlagiarismMinFuncTokens = 14
+			config.SaveSettings(m.settings)
+		case 5:
+			m.settings.PlagiarismScoreThreshold = 0.6
 			config.SaveSettings(m.settings)
 		}
 	case "q", "esc":
@@ -368,6 +448,28 @@ func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.isRunning {
 		return m, nil
+	}
+
+	if msg.String() == "tab" {
+		if m.report != nil {
+			m.submissionsTab = (m.submissionsTab + 1) % 2
+			if m.submissionsTab == 0 {
+				m.cursor = 0
+				m.scrollOffset = 0
+			} else {
+				m.similarityCursor = 0
+				m.similarityScroll = 0
+				proc := m.currentSimilarityProcessName()
+				if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
+					return m, m.computeSimilarityForProcess(proc)
+				}
+			}
+		}
+		return m, nil
+	}
+
+	if m.submissionsTab == 1 {
+		return m.updateSubmissionsSimilarity(msg)
 	}
 
 	if m.searchActive {
@@ -434,7 +536,6 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.clearRunResults()
 		} else {
-			// At top of list, go to search bar
 			m.searchActive = true
 			m.searchInput.Focus()
 			return m, textinput.Blink
@@ -460,6 +561,79 @@ func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewHome
 		m.results = nil
 		m.report = nil
+	}
+
+	return m, nil
+}
+
+func (m Model) updateSubmissionsSimilarity(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.currentView = ViewHome
+		m.results = nil
+		m.report = nil
+		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
+		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
+		m.similarityErrorByProcess = make(map[string]string)
+		return m, nil
+	}
+
+	if len(m.similarityProcessNames) == 0 {
+		return m, nil
+	}
+
+	currentProc := m.currentSimilarityProcessName()
+	if currentProc != "" && m.similarityStateByProcess[currentProc] == SimilarityNotStarted {
+		return m, m.computeSimilarityForProcess(currentProc)
+	}
+
+	pairs := m.similarityPairsByProcess[currentProc]
+	dataRows := min(30, m.visibleRows-1)
+	if dataRows < 6 {
+		dataRows = 6
+	}
+
+	switch msg.String() {
+	case "j", "down":
+		if len(pairs) == 0 {
+			return m, nil
+		}
+		if m.similarityCursor < len(pairs)-1 {
+			m.similarityCursor++
+			if m.similarityCursor >= m.similarityScroll+dataRows {
+				m.similarityScroll++
+			}
+		}
+	case "k", "up":
+		if len(pairs) == 0 {
+			return m, nil
+		}
+		if m.similarityCursor > 0 {
+			m.similarityCursor--
+			if m.similarityCursor < m.similarityScroll {
+				m.similarityScroll--
+			}
+		}
+	case "l", "right":
+		if m.similaritySelectedProc < len(m.similarityProcessNames)-1 {
+			m.similaritySelectedProc++
+			m.similarityCursor = 0
+			m.similarityScroll = 0
+			proc := m.currentSimilarityProcessName()
+			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
+				return m, m.computeSimilarityForProcess(proc)
+			}
+		}
+	case "h", "left":
+		if m.similaritySelectedProc > 0 {
+			m.similaritySelectedProc--
+			m.similarityCursor = 0
+			m.similarityScroll = 0
+			proc := m.currentSimilarityProcessName()
+			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
+				return m, m.computeSimilarityForProcess(proc)
+			}
+		}
 	}
 
 	return m, nil
@@ -578,25 +752,21 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
 				proc := m.multiProcessResult.Processes[procName]
 
-				// Calculate content width for multi-process boxes
 				boxWidth := (m.width - 20) / 2
 				if boxWidth < 30 {
 					boxWidth = 30
 				}
 				contentWidth := boxWidth - 4
 
-				// Calculate output length based on view mode (must match view exactly)
 				var outputLen int
 				if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
-					// Diff view: diff lines + stderr section
 					outputLen = len(proc.OutputDiff)
 					if proc.Stderr != "" {
-						outputLen++ // blank line
-						outputLen++ // "─── stderr ───" separator
+						outputLen++
+						outputLen++
 						outputLen += len(components.WrapLines(proc.Stderr, contentWidth))
 					}
 				} else {
-					// Raw view: wrapped stdout + stderr with label (must match view)
 					allOutput := proc.Stdout
 					if proc.Stderr != "" {
 						if allOutput != "" {
@@ -756,18 +926,15 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		contentWidth := boxWidth - 4
 
-		// Calculate output length based on view mode (must match view exactly)
 		var outputLen int
 		if m.runResult.OutputMatch == domain.OutputMatchFail && len(m.runResult.OutputDiff) > 0 {
-			// Diff view: diff lines + stderr section
 			outputLen = len(m.runResult.OutputDiff)
 			if m.runResult.Stderr != "" {
-				outputLen++ // blank line
-				outputLen++ // "─── stderr ───" separator
+				outputLen++
+				outputLen++
 				outputLen += len(components.WrapLines(m.runResult.Stderr, contentWidth))
 			}
 		} else {
-			// Raw view: wrapped stdout + stderr with label (must match view)
 			allOutput := m.runResult.Stdout
 			if m.runResult.Stderr != "" {
 				if allOutput != "" {
@@ -1003,6 +1170,15 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.runError = ""
 	m.executor = nil
 	m.clearRunResults()
+	m.runID++
+	m.submissionsTab = 0
+	m.similarityPairsByProcess = make(map[string][]SimilarityPair)
+	m.similarityStateByProcess = make(map[string]SimilarityComputeState)
+	m.similarityErrorByProcess = make(map[string]string)
+	m.similarityProcessNames = nil
+	m.similaritySelectedProc = 0
+	m.similarityCursor = 0
+	m.similarityScroll = 0
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries
@@ -1080,6 +1256,134 @@ func (m Model) saveBannedList() tea.Cmd {
 		os.WriteFile(bannedFile, []byte(b.String()), 0644)
 		return bannedListSavedMsg{}
 	}
+}
+
+func (m *Model) initSimilarityProcesses() {
+	m.similarityProcessNames = nil
+	m.similaritySelectedProc = 0
+
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return
+	}
+
+	pol := m.policies[m.selectedPolicy]
+	mp := pol.Run.MultiProcess
+	if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
+		for _, proc := range mp.Executables {
+			m.similarityProcessNames = append(m.similarityProcessNames, proc.Name)
+		}
+	} else {
+		name := pol.Compile.SourceFile
+		if name == "" {
+			name = "main"
+		}
+		m.similarityProcessNames = []string{name}
+	}
+
+	if m.similarityStateByProcess == nil {
+		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
+	}
+	if m.similarityErrorByProcess == nil {
+		m.similarityErrorByProcess = make(map[string]string)
+	}
+	if m.similarityInFlight == nil {
+		m.similarityInFlight = make(map[string]bool)
+	}
+	for _, p := range m.similarityProcessNames {
+		m.similarityStateByProcess[p] = SimilarityNotStarted
+	}
+}
+
+func (m Model) currentSimilarityProcessName() string {
+	if len(m.similarityProcessNames) == 0 {
+		return ""
+	}
+	if m.similaritySelectedProc < 0 || m.similaritySelectedProc >= len(m.similarityProcessNames) {
+		return m.similarityProcessNames[0]
+	}
+	return m.similarityProcessNames[m.similaritySelectedProc]
+}
+
+func (m Model) resolveSimilaritySourceFile(process string) string {
+	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
+		return ""
+	}
+
+	pol := m.policies[m.selectedPolicy]
+	if mp := pol.Run.MultiProcess; mp != nil && mp.Enabled && len(mp.Executables) > 0 {
+		for _, proc := range mp.Executables {
+			if proc.Name == process {
+				return proc.SourceFile
+			}
+		}
+		return ""
+	}
+	return pol.Compile.SourceFile
+}
+
+func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
+	if m.report == nil || len(m.results) == 0 {
+		return nil
+	}
+	if m.similarityPairsByProcess == nil {
+		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
+	}
+	if m.similarityStateByProcess == nil {
+		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
+	}
+	if m.similarityErrorByProcess == nil {
+		m.similarityErrorByProcess = make(map[string]string)
+	}
+	if m.similarityInFlight == nil {
+		m.similarityInFlight = make(map[string]bool)
+	}
+	if m.similarityInFlight[process] {
+		return nil
+	}
+	if m.similarityStateByProcess[process] == SimilarityComputing || m.similarityStateByProcess[process] == SimilarityDone {
+		return nil
+	}
+
+	srcFile := m.resolveSimilaritySourceFile(process)
+	if srcFile == "" {
+		if len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
+			srcFile = m.results[0].Submission.CFiles[0]
+		}
+	}
+	if srcFile == "" {
+		currentRunID := m.runID
+		return func() tea.Msg {
+			return similarityErrorMsg{
+				process: process,
+				runID:   currentRunID,
+				err:     fmt.Errorf("no source file found for process %q. check policy configuration", process),
+			}
+		}
+	}
+
+	cfg := domain.CompareConfig{
+		WindowSize:     m.settings.PlagiarismWindowSize,
+		MinFuncTokens:  m.settings.PlagiarismMinFuncTokens,
+		ScoreThreshold: m.settings.PlagiarismScoreThreshold,
+	}
+
+	submissions := make([]domain.Submission, len(m.results))
+	for i, res := range m.results {
+		submissions[i] = res.Submission
+	}
+
+	currentRunID := m.runID
+	m.similarityInFlight[process] = true
+	return tea.Batch(
+		func() tea.Msg { return similarityStartedMsg{process: process, runID: currentRunID} },
+		func() tea.Msg {
+			pairs, err := engine.ComputeSimilarityForProcess(submissions, srcFile, cfg)
+			if err != nil {
+				return similarityErrorMsg{process: process, err: err, runID: currentRunID}
+			}
+			return similarityComputedMsg{process: process, pairs: pairs, runID: currentRunID}
+		},
+	)
 }
 
 

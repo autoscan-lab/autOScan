@@ -74,8 +74,7 @@ func (m Model) View() string {
 func (m Model) renderHome() string {
 	var b strings.Builder
 
-	// Calculate layout dimensions - use full width with minimum constraints
-	contentWidth := m.width - 4 // Leave some margin
+	contentWidth := m.width - 4
 	if contentWidth < 80 {
 		contentWidth = 80
 	}
@@ -136,7 +135,6 @@ func (m Model) renderHome() string {
 		menu.WriteString(fmt.Sprintf("%s%s %s\n", cursor, keyStyle, style.Render(mi.desc)))
 	}
 
-	// Show uninstall confirmation if active
 	if m.confirmDelete && m.menuItem == MenuUninstall {
 		menu.WriteString("\n")
 		menu.WriteString(components.ConfirmDialog("Remove autoscan and all configs?"))
@@ -173,7 +171,6 @@ func (m Model) renderPolicySelect() string {
 			styles.SubtleText.Render("Create a policy via Manage Policies or edit ~/.config/autoscan/")
 		b.WriteString(box.Render(content))
 	} else {
-		// Main selection box with primary border
 		box := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(styles.Primary).
@@ -399,7 +396,6 @@ func (m Model) renderSettings() string {
 	content.WriteString(styles.SubtleText.Render("Display Options"))
 	content.WriteString("\n\n")
 
-	// Short names toggle
 	toggle1 := components.Toggle{
 		Label:       "Short Names",
 		Description: "Truncate folder names at first underscore",
@@ -409,7 +405,6 @@ func (m Model) renderSettings() string {
 	content.WriteString(toggle1.View())
 	content.WriteString("\n\n")
 
-	// Keep binaries toggle
 	toggle2 := components.Toggle{
 		Label:       "Keep Binaries",
 		Description: "Keep compiled binaries after grading",
@@ -419,7 +414,6 @@ func (m Model) renderSettings() string {
 	content.WriteString(toggle2.View())
 	content.WriteString("\n\n")
 
-	// Max workers
 	workersLabel := "Max Workers"
 	cpuCount := runtime.NumCPU()
 	var workersValue string
@@ -440,6 +434,33 @@ func (m Model) renderSettings() string {
 	content.WriteString("\n")
 	content.WriteString(styles.SubtleText.Render(desc2))
 
+	content.WriteString("\n\n")
+	content.WriteString(styles.SubtleText.Render("Plagiarism Detection"))
+	content.WriteString("\n\n")
+
+	windowLine := fmt.Sprintf("  Window Size: %d", m.settings.PlagiarismWindowSize)
+	if m.settingsCursor == 3 {
+		content.WriteString(styles.SelectedItem.Render(windowLine))
+	} else {
+		content.WriteString(styles.NormalItem.Render(windowLine))
+	}
+	content.WriteString("\n")
+
+	minTokensLine := fmt.Sprintf("  Min Function Tokens: %d", m.settings.PlagiarismMinFuncTokens)
+	if m.settingsCursor == 4 {
+		content.WriteString(styles.SelectedItem.Render(minTokensLine))
+	} else {
+		content.WriteString(styles.NormalItem.Render(minTokensLine))
+	}
+	content.WriteString("\n")
+
+	thresholdLine := fmt.Sprintf("  Score Threshold: %.2f", m.settings.PlagiarismScoreThreshold)
+	if m.settingsCursor == 5 {
+		content.WriteString(styles.SelectedItem.Render(thresholdLine))
+	} else {
+		content.WriteString(styles.NormalItem.Render(thresholdLine))
+	}
+
 	b.WriteString(box.Render(content.String()))
 
 	b.WriteString("\n\n")
@@ -450,8 +471,14 @@ func (m Model) renderSettings() string {
 		{"↑/↓", "navigate"},
 		{"space/enter", "toggle"},
 	}
-	if m.settingsCursor == 2 {
-		helpItems = append(helpItems, components.HelpItem{"+/-", "adjust"}, components.HelpItem{"0", "reset to all CPUs"})
+	if m.settingsCursor >= 2 {
+		resetLabel := "reset"
+		if m.settingsCursor == 2 {
+			resetLabel = "reset workers"
+		} else {
+			resetLabel = "reset default"
+		}
+		helpItems = append(helpItems, components.HelpItem{"+/-", "adjust"}, components.HelpItem{"0", resetLabel})
 	}
 	helpItems = append(helpItems, components.HelpItem{"esc", "back"})
 	b.WriteString(components.RenderHelpBar(helpItems))
@@ -508,6 +535,20 @@ func (m Model) renderSubmissions() string {
 	b.WriteString(header.Render(policyName))
 	b.WriteString("\n")
 	b.WriteString(styles.SubtleText.Render(fmt.Sprintf("  %s", m.root)))
+	b.WriteString("\n\n")
+
+	tabs := []string{"Results", "Similarity"}
+	var tabRow strings.Builder
+	tabRow.WriteString("  ")
+	for i, tab := range tabs {
+		if i == m.submissionsTab {
+			tabRow.WriteString(styles.TabActive.Render(fmt.Sprintf(" %s ", tab)))
+		} else {
+			tabRow.WriteString(styles.TabInactive.Render(fmt.Sprintf(" %s ", tab)))
+		}
+		tabRow.WriteString(" ")
+	}
+	b.WriteString(tabRow.String())
 	b.WriteString("\n")
 
 	if m.runError != "" {
@@ -521,13 +562,29 @@ func (m Model) renderSubmissions() string {
 	} else if m.isRunning {
 		b.WriteString(fmt.Sprintf("\n  %s Scanning and compiling...\n", m.spinner.View()))
 	} else if m.report != nil {
-		// Summary stats
-		statsBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Muted).
-			Padding(0, 2).
-			MarginTop(1)
+		b.WriteString(m.renderSubmissionsHeaderBox())
+		b.WriteString("\n")
+	}
 
+	b.WriteString("\n")
+
+	if m.submissionsTab == 0 {
+		b.WriteString(m.renderSubmissionsResults())
+	} else {
+		b.WriteString(m.renderSubmissionsSimilarity())
+	}
+
+	return b.String()
+}
+
+func (m Model) renderSubmissionsHeaderBox() string {
+	statsBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(styles.Muted).
+		Padding(0, 2).
+		MarginTop(1)
+
+	if m.submissionsTab == 0 {
 		searchLabel := ""
 		if strings.TrimSpace(m.searchQuery) != "" {
 			searchLabel = fmt.Sprintf("  Search: %s", m.searchQuery)
@@ -542,13 +599,26 @@ func (m Model) renderSubmissions() string {
 			m.filter.String(),
 			searchLabel,
 		)
-		b.WriteString(statsBox.Render(stats))
-		b.WriteString("\n")
+		return statsBox.Render(stats)
 	}
 
-	b.WriteString("\n")
+	if len(m.similarityProcessNames) == 0 {
+		return statsBox.Render("Similarity: no processes configured")
+	}
 
-	// Always show search bar, highlight when active
+	line2 := fmt.Sprintf(
+		"Window size: %d   Min tokens: %d   Threshold: %.2f",
+		m.settings.PlagiarismWindowSize,
+		m.settings.PlagiarismMinFuncTokens,
+		m.settings.PlagiarismScoreThreshold,
+	)
+
+	return statsBox.Render(styles.NormalItem.Render(line2))
+}
+
+func (m Model) renderSubmissionsResults() string {
+	var b strings.Builder
+
 	searchBorderColor := styles.Muted
 	if m.searchActive {
 		searchBorderColor = styles.Primary
@@ -573,8 +643,7 @@ func (m Model) renderSubmissions() string {
 		colBanned  = 10
 		colGrade   = 8
 	)
-	// Calculate submission column width based on available space
-	fixedCols := colStatus + colCompile + colBanned + colGrade + 15 // padding/margins
+	fixedCols := colStatus + colCompile + colBanned + colGrade + 15
 	colSubmission := m.width - fixedCols
 	if colSubmission < 30 {
 		colSubmission = 30
@@ -640,7 +709,6 @@ func (m Model) renderSubmissions() string {
 			statusText = "..."
 			statusStyled = statusText
 		}
-		// Pad status to fixed width
 		statusPadding := strings.Repeat(" ", max(0, colStatus-lipgloss.Width(statusText)))
 
 		id := r.Submission.ID
@@ -649,9 +717,7 @@ func (m Model) renderSubmissions() string {
 				id = id[:idx]
 			}
 		}
-		// Truncate based on display width, not byte length
 		if lipgloss.Width(id) > colSubmission {
-			// Truncate rune by rune until it fits
 			runes := []rune(id)
 			for lipgloss.Width(string(runes)) > colSubmission-3 && len(runes) > 0 {
 				runes = runes[:len(runes)-1]
@@ -713,6 +779,7 @@ func (m Model) renderSubmissions() string {
 
 	b.WriteString("\n\n")
 	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+		{Key: "tab", Desc: "switch to similarity"},
 		{Key: "↑/↓", Desc: "navigate"},
 		{Key: "enter", Desc: "details"},
 		{Key: "/", Desc: "search"},
@@ -720,6 +787,204 @@ func (m Model) renderSubmissions() string {
 		{Key: "r", Desc: "re-run"},
 		{Key: "e", Desc: "export"},
 		{Key: "esc", Desc: "clear/back"},
+	}))
+
+	return b.String()
+}
+
+func (m Model) renderSubmissionsSimilarity() string {
+	var b strings.Builder
+
+	if m.report == nil {
+		b.WriteString(styles.SubtleText.Render("No run data available. Run the grader first."))
+		return b.String()
+	}
+
+	if len(m.similarityProcessNames) == 0 {
+		b.WriteString(styles.SubtleText.Render("No processes configured. Check policy configuration."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	b.WriteString("  ")
+	b.WriteString(styles.SubtleText.Render("Process: "))
+	for i, name := range m.similarityProcessNames {
+		if i == m.similaritySelectedProc {
+			b.WriteString(styles.TabActive.Render(fmt.Sprintf(" %s ", name)))
+		} else {
+			b.WriteString(styles.TabInactive.Render(fmt.Sprintf(" %s ", name)))
+		}
+		b.WriteString(" ")
+	}
+	b.WriteString("\n\n")
+
+	currentProc := m.currentSimilarityProcessName()
+	pairs := m.similarityPairsByProcess[currentProc]
+	state := m.similarityStateByProcess[currentProc]
+
+	if errText, ok := m.similarityErrorByProcess[currentProc]; ok && errText != "" {
+		b.WriteString(styles.WarningText.Render("Similarity error: " + errText))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	if state == SimilarityNotStarted || state == SimilarityComputing {
+		b.WriteString(styles.SubtleText.Render("Computing similarity..."))
+		b.WriteString("\n")
+		return b.String()
+	}
+	if len(pairs) == 0 {
+		b.WriteString(styles.SubtleText.Render("No pairs found (not enough comparable submissions)."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	tableBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(styles.Muted).
+		Padding(0, 1)
+
+	var table strings.Builder
+
+	padOrTrim := func(s string, w int) string {
+		s = components.TruncateToWidth(s, w)
+		if d := w - lipgloss.Width(s); d > 0 {
+			s += strings.Repeat(" ", d)
+		}
+		return s
+	}
+
+	const (
+		colRank    = 5
+		colJac     = 9
+		colPerFunc = 9
+		colMatches = 13
+		colStatus  = 8
+	)
+	fixedCols := 2 + colRank + colJac + colPerFunc + colMatches + colStatus + 7
+	availForNames := m.width - fixedCols
+	colSub := 20
+	colSubB := 20
+	if availForNames > 0 {
+		per := availForNames / 2
+		if per > colSub {
+			colSub = per
+			colSubB = per
+		}
+	}
+	if colSub > 34 {
+		colSub = 34
+	}
+	if colSubB > 34 {
+		colSubB = 34
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(styles.Primary)
+
+	headerLine := "  " +
+		padOrTrim("#", colRank) + " " +
+		padOrTrim("Submission A", colSub) + " " +
+		padOrTrim("Submission B", colSubB) + " " +
+		padOrTrim("Jaccard", colJac) + " " +
+		padOrTrim("Per-func", colPerFunc) + " " +
+		padOrTrim("Matches", colMatches) + " " +
+		padOrTrim("Status", colStatus)
+	table.WriteString(headerStyle.Render(headerLine))
+	table.WriteString("\n")
+	table.WriteString(strings.Repeat("─", 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus))
+	table.WriteString("\n")
+
+	dataRows := min(30, m.visibleRows-1) // reserve 1 line for footer/padding
+	if dataRows < 6 {
+		dataRows = 6
+	}
+
+	endIdx := m.similarityScroll + dataRows
+	if endIdx > len(pairs) {
+		endIdx = len(pairs)
+	}
+
+	for i := m.similarityScroll; i < endIdx; i++ {
+		p := pairs[i]
+		res := p.Result
+
+		cursor := "  "
+		if i == m.similarityCursor {
+			cursor = styles.Highlight.Render("▶ ")
+		}
+
+		rank := i + 1
+		aID := m.results[p.AIndex].Submission.ID
+		bID := m.results[p.BIndex].Submission.ID
+		if m.settings.ShortNames {
+			if idx := strings.Index(aID, "_"); idx > 0 {
+				aID = aID[:idx]
+			}
+			if idx := strings.Index(bID, "_"); idx > 0 {
+				bID = bID[:idx]
+			}
+		}
+		if lipgloss.Width(aID) > colSub {
+			runes := []rune(aID)
+			for lipgloss.Width(string(runes)) > colSub-3 && len(runes) > 0 {
+				runes = runes[:len(runes)-1]
+			}
+			aID = string(runes) + "..."
+		}
+		if lipgloss.Width(bID) > colSubB {
+			runes := []rune(bID)
+			for lipgloss.Width(string(runes)) > colSubB-3 && len(runes) > 0 {
+				runes = runes[:len(runes)-1]
+			}
+			bID = string(runes) + "..."
+		}
+
+		statusText := "OK"
+		if res.Flagged {
+			statusText = "FLAG"
+		}
+
+		matchesText := fmt.Sprintf("%d/%d", res.WindowMatches, res.WindowUnion)
+		jacText := fmt.Sprintf("%.2f%%", res.WindowJaccard*100)
+		perFuncText := fmt.Sprintf("%.2f%%", res.PerFuncSimilarity*100)
+
+		statusPadded := padOrTrim(statusText, colStatus)
+		statusRendered := styles.SuccessText.Render(statusPadded)
+		if res.Flagged {
+			statusRendered = styles.WarningText.Render(statusPadded)
+		}
+
+		row := cursor +
+			padOrTrim(fmt.Sprintf("%d", rank), colRank) + " " +
+			padOrTrim(aID, colSub) + " " +
+			padOrTrim(bID, colSubB) + " " +
+			padOrTrim(jacText, colJac) + " " +
+			padOrTrim(perFuncText, colPerFunc) + " " +
+			padOrTrim(matchesText, colMatches) + " " +
+			statusRendered
+		table.WriteString(row)
+		table.WriteString("\n")
+	}
+
+	for i := endIdx; i < m.similarityScroll+dataRows; i++ {
+		table.WriteString("\n")
+	}
+
+	footer := ""
+	if len(pairs) > dataRows {
+		footer = fmt.Sprintf("  Showing %d-%d of %d", m.similarityScroll+1, endIdx, len(pairs))
+	}
+	table.WriteString(styles.SubtleText.Render(padOrTrim(footer, 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus)))
+
+	b.WriteString(tableBox.Render(table.String()))
+	b.WriteString("\n\n")
+	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+		{Key: "tab", Desc: "switch to results"},
+		{Key: "h/l", Desc: "prev/next process"},
+		{Key: "↑/↓", Desc: "navigate"},
+		{Key: "esc", Desc: "back"},
 	}))
 
 	return b.String()
@@ -793,11 +1058,10 @@ func (m Model) renderDetails() string {
 		}))
 	case 3:
 		helpItems := []components.HelpItem{
-			{Key: "tab", Desc: "switch tabs"},
-			{Key: "↑/↓", Desc: "navigate"},
-			{Key: "enter", Desc: "run/focus"},
+		{Key: "tab", Desc: "switch tabs"},
+		{Key: "↑/↓", Desc: "navigate"},
+		{Key: "enter", Desc: "run/focus"},
 		}
-		// Add multi-process help if configured
 		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 			if mp := m.policies[m.selectedPolicy].Run.MultiProcess; mp != nil && mp.Enabled {
 				helpItems = append(helpItems, components.HelpItem{Key: "m", Desc: "multi-process"})
@@ -880,47 +1144,35 @@ func (m Model) renderCompileTab(r domain.SubmissionResult) string {
 	return b.String()
 }
 
-// truncatePathToFilename extracts just the filename from a path if it looks like a path
 func truncatePathToFilename(s string) string {
-	// If it contains a path separator and looks like a file path
 	if strings.Contains(s, "/") && !strings.HasPrefix(s, "-") {
 		return filepath.Base(s)
 	}
 	return s
 }
 
-// truncatePathsInText replaces absolute paths with just filenames in compiler output
 func truncatePathsInText(text string) string {
-	// Match patterns like /path/to/file.c:line:col or /path/to/file.c
-	// This regex finds absolute paths and replaces them with just the filename
 	result := text
 	
-	// Split by common path delimiters and rebuild
 	parts := strings.Split(result, "/")
 	if len(parts) > 1 {
-		// Find path-like sequences and truncate them
-		// Look for patterns: /Users/... or /home/... etc followed by filename
 		result = truncateAbsolutePaths(result)
 	}
 	
 	return result
 }
 
-// truncateAbsolutePaths finds and truncates absolute paths in text
 func truncateAbsolutePaths(text string) string {
 	var result strings.Builder
 	i := 0
 	for i < len(text) {
-		// Look for start of absolute path
 		if text[i] == '/' && i+1 < len(text) && (text[i+1] == 'U' || text[i+1] == 'h' || text[i+1] == 'v' || text[i+1] == 't') {
-			// Might be /Users, /home, /var, /tmp etc - find the end of the path
 			pathEnd := i + 1
 			for pathEnd < len(text) && text[pathEnd] != ' ' && text[pathEnd] != ':' && text[pathEnd] != '\n' && text[pathEnd] != ')' && text[pathEnd] != '(' {
 				pathEnd++
 			}
 			if pathEnd > i+1 {
 				pathStr := text[i:pathEnd]
-				// Only truncate if it looks like a real file path (contains multiple /)
 				if strings.Count(pathStr, "/") > 2 {
 					filename := filepath.Base(pathStr)
 					result.WriteString(filename)
@@ -980,7 +1232,6 @@ func (m Model) renderBannedTab(r domain.SubmissionResult) string {
 					b.WriteString("\n")
 					break
 				}
-				// Build the hit line and truncate if too long (runes)
 				hitLine := fmt.Sprintf("       %s:%d %s", hit.File, hit.Line, hit.Snippet)
 				if lipgloss.Width(hitLine) > maxLineWidth {
 					runes := []rune(hitLine)
@@ -1149,7 +1400,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 						name = fmt.Sprintf("Test %d", i+1)
 					}
 
-					// Show args if present
 					argsInfo := ""
 					if len(tc.Args) > 0 {
 						argsInfo = fmt.Sprintf(" [%s]", strings.Join(tc.Args, " "))
@@ -1179,7 +1429,6 @@ func (m Model) renderRunTab(r domain.SubmissionResult) string {
 				}
 			}
 
-			// Summary
 			if passed == len(m.runTestResults) {
 				b.WriteString(styles.SuccessText.Render(fmt.Sprintf("All %d tests passed!", passed)))
 			} else {
@@ -1305,7 +1554,6 @@ func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoC
 
 	processStartIdx := 1 + scenarioCount
 
-	// First box
 	procName := processes[startIdx]
 	proc := m.multiProcessResult.Processes[procName]
 	isSelected1 := m.runInputFocused == processStartIdx+startIdx
@@ -1316,7 +1564,6 @@ func (m Model) renderProcessRow(processes []string, startIdx, colWidth int, twoC
 	}
 	box1 := m.renderProcessBox(proc, colWidth, isSelected1, isFocused1, scroll1)
 
-	// Second box (if exists)
 	if startIdx+1 >= len(processes) {
 		return box1
 	}
@@ -1394,7 +1641,6 @@ func (m Model) renderProcessBox(proc *domain.ProcessResult, width int, isSelecte
 	content.WriteString(renderProcessStatusLine(proc))
 	content.WriteString("\n")
 
-	// Show diff view if output doesn't match, otherwise show raw output
 	var outputLines []string
 	if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
 		outputLines = append(outputLines, renderDiffLines(proc.OutputDiff, contentWidth)...)
@@ -1457,16 +1703,14 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 
 	content.WriteString(renderExecuteStatusLine(r))
 
-	// Show diff view if output doesn't match, otherwise show raw output
 	var outputLines []string
 	if r.OutputMatch == domain.OutputMatchFail && len(r.OutputDiff) > 0 {
-		outputLines = append(outputLines, renderDiffLines(r.OutputDiff, contentWidth)...)
-		if r.Stderr != "" {
-			outputLines = appendStderrBlock(outputLines, r.Stderr, contentWidth)
-		}
-	} else {
-		// Combine stdout and stderr
-		allOutput := components.SanitizeDisplay(r.Stdout)
+			outputLines = append(outputLines, renderDiffLines(r.OutputDiff, contentWidth)...)
+			if r.Stderr != "" {
+				outputLines = appendStderrBlock(outputLines, r.Stderr, contentWidth)
+			}
+		} else {
+			allOutput := components.SanitizeDisplay(r.Stdout)
 		if r.Stderr != "" {
 			if allOutput != "" {
 				allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
@@ -1612,7 +1856,6 @@ func (m Model) renderExport() string {
 	b.WriteString(styles.HeaderStyle.Render("Export Results"))
 	b.WriteString("\n\n")
 
-	// Use full width
 	boxWidth := m.width - 8
 	if boxWidth < 60 {
 		boxWidth = 60
