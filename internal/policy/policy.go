@@ -6,33 +6,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/felipetrejos/autoscan/internal/config"
+	"github.com/feli05/autoscan/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
 type Policy struct {
-	Name          string          `yaml:"name"`
-	Root          string          `yaml:"root"`
-	Discover      DiscoverConfig  `yaml:"discover"`
-	Compile       CompileConfig   `yaml:"compile"`
-	Run           RunConfig       `yaml:"run"`
-	RequiredFiles []string        `yaml:"required_files"`
-	LibraryFiles  []string        `yaml:"library_files"`  // .c/.o/.h files from ~/.config/autoscan/libraries/
-	TestFiles     []string        `yaml:"test_files,omitempty"`
-	FilePath      string          `yaml:"-"` // Set after loading
-	BannedFunctions []string      `yaml:"-"` // Loaded from global banned.yaml
+	Name            string         `yaml:"name"`
+	Discover        DiscoverConfig `yaml:"discover"`
+	Compile         CompileConfig  `yaml:"compile"`
+	Run             RunConfig      `yaml:"run"`
+	LibraryFiles    []string       `yaml:"library_files"` // .c/.o/.h files from ~/.config/autoscan/libraries/
+	TestFiles       []string       `yaml:"test_files,omitempty"`
+	FilePath        string         `yaml:"-"` // Set after loading
+	BannedFunctions []string       `yaml:"-"` // Loaded from global banned.yaml
 }
 
 type DiscoverConfig struct {
-	LeafSubmission bool `yaml:"leaf_submission"`
-	MinCFiles      int  `yaml:"min_c_files"`
+	MinCFiles int `yaml:"min_c_files"`
 }
 
 type CompileConfig struct {
 	GCC        string   `yaml:"gcc"`
 	Flags      []string `yaml:"flags"`
 	SourceFile string   `yaml:"source_file,omitempty"`
-	Output     string   `yaml:"output,omitempty"` // Fallback if SourceFile not set
 }
 
 type RunConfig struct {
@@ -82,19 +78,12 @@ func Load(path string) (*Policy, error) {
 	}
 
 	p.FilePath = path
-	if p.Root == "" {
-		p.Root = "."
-	}
 	if p.Discover.MinCFiles == 0 {
 		p.Discover.MinCFiles = 1
 	}
 	if p.Compile.GCC == "" {
 		p.Compile.GCC = "gcc"
 	}
-	if p.Compile.Output == "" {
-		p.Compile.Output = "a.out"
-	}
-
 	return &p, nil
 }
 

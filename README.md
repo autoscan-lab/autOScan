@@ -24,6 +24,9 @@
 - **Run and test compiled submissions** with custom arguments or preset test cases
 - **Multi-process execution** with real-time streaming output
 - **Scrollable output** for viewing long execution results
+- **Output comparison for test cases** with highlighted diffs
+- **Similarity detection across submissions** with per-file metrics
+- **Side-by-side pair detail view** with highlighted matches and pane scrolling
 - Create and manage grading policies (single-process and multi-process modes)
 - Filter results by status (pass/fail/banned)
 - Export results to JSON or CSV
@@ -35,7 +38,7 @@
 
 **Supported Platforms:** macOS (arm64), Linux (amd64) and Windows (amd64)
 
-Download the appropriate binary from [Releases](https://github.com/Feli05/autOScan/releases):
+Download the appropriate binary from [Releases](https://github.com/feli05/autOScan/releases):
 
 **macOS:**
 ```bash
@@ -59,7 +62,7 @@ On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add
 ### Build from Source
 
 ```bash
-git clone https://github.com/Feli05/autOScan.git
+git clone https://github.com/feli05/autOScan.git
 cd autOScan
 make install
 ```
@@ -96,6 +99,14 @@ autoscan
 - **CHECK** - Requires manual testing
 - **2** - Automatic fail grade (compile error or banned calls)
 
+### Similarity View
+
+After a run, switch to the **Similarity** tab to see ranked pairs per source file.
+Keys: **↑/↓** navigate, **h/l** switch source file/process, **Enter** opens pair detail, **Esc** goes back.
+
+**Pair detail view:** side-by-side code panes with highlighted spans.
+Keys: **↑/↓** scroll, **←/→** pan, **h/l** switch pane.
+
 ---
 
 ## Configuration
@@ -107,6 +118,7 @@ On first run, configs are created at `~/.config/autoscan/`:
 ├── policies/        # Policy YAML files
 ├── libraries/       # Bundled library files (.c/.h/.o)
 ├── test_files/      # Bundled test input files
+├── expected_outputs/ # Bundled expected output files
 ├── banned.yaml      # Global banned functions
 └── settings.yaml    # User preferences
 ```
@@ -171,6 +183,9 @@ banned:
 - **Short Names** - Truncate folder names at first underscore
 - **Keep Binaries** - Preserve compiled binaries after grading (required for Run feature)
 - **Max Workers** - Limit concurrent compilation processes (0 = use all CPUs)
+- **Plagiarism Window Size** - Window size for similarity detection
+- **Plagiarism Min Func Tokens** - Minimum tokens per function to compare
+- **Plagiarism Score Threshold** - Similarity threshold for reporting
 
 ---
 
@@ -224,6 +239,11 @@ run:
 - `args` - Array of command-line arguments
 - `input` - Stdin input to provide (use `\n` for newlines)
 - `expected_exit` - Expected exit code (for pass/fail validation)
+- `expected_output_file` - Optional stdout comparison file (diff shown in results)
+
+### Additional Policy Fields
+
+- `discover.min_c_files` - Minimum number of `.c` files to accept a submission
 
 Select a test case and press Enter to run it.
 
@@ -258,6 +278,8 @@ run:
 - `args` - Default command-line arguments
 - `input` - Stdin input
 - `start_delay_ms` - Delay before starting (for staggered startup)
+
+Each multi-process executable must define `source_file`.
 
 ### Multi-Process Test Scenarios
 
@@ -304,6 +326,10 @@ run:
 - Select a test scenario and press Enter to run it
 - Output streams in real-time to each process box
 
+**Scenario output comparison:**
+- `expected_outputs` maps process name → expected output filename
+- Diff is shown when an expected output file is provided
+
 ### Bundled Test Files
 
 If tests require input files (`.txt`, `.bin`, etc.), bundle them with the policy:
@@ -324,6 +350,11 @@ Add test files via the policy editor (similar to library files):
 - `[a]` - Add new file from filesystem
 - `[e]` - Use existing bundled file
 - `[d]` - Remove from policy
+
+### Bundled Expected Outputs
+
+Expected output files are stored in `~/.config/autoscan/expected_outputs/` and referenced by `expected_output_file`
+or `expected_outputs` in multi-process scenarios. Add them via the policy editor or place files directly in that folder.
 
 All processes run in parallel with **real-time streaming output**. Results are shown in a responsive grid layout with pass/fail indicators.
 

@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felipetrejos/autoscan/internal/config"
-	"github.com/felipetrejos/autoscan/internal/policy"
-	"github.com/felipetrejos/autoscan/internal/tui/components"
-	"github.com/felipetrejos/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/config"
+	"github.com/feli05/autoscan/internal/policy"
+	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
 
@@ -96,11 +96,11 @@ type PolicyEditor struct {
 		focusedIdx int
 	}
 
-	testScenarios          []policy.MultiProcessScenario
-	testScenariosCursor    int
-	editingScenario        bool
-	editingScenarioIdx     int
-	scenarioInputs         struct {
+	testScenarios       []policy.MultiProcessScenario
+	testScenariosCursor int
+	editingScenario     bool
+	editingScenarioIdx  int
+	scenarioInputs      struct {
 		name            textinput.Model
 		processArgs     map[string]textinput.Model
 		processStdin    map[string]textinput.Model
@@ -179,17 +179,17 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	scenarioNameInput.Width = 40
 
 	pe := PolicyEditor{
-		isNew:           true,
-		nameInput:       nameInput,
-		flagsInput:      flagsInput,
-		sourceFileInput: sourceFileInput,
-		libraryFiles:    []string{},
-		folderBrowser:   NewFolderBrowser(cwd),
-		browsingStartDir: cwd,
-		focusedField:    FieldName,
-		testCases:       []policy.TestCase{},
-		multiProcessExecs:  []policy.ProcessConfig{},
-		testScenarios:      []policy.MultiProcessScenario{},
+		isNew:             true,
+		nameInput:         nameInput,
+		flagsInput:        flagsInput,
+		sourceFileInput:   sourceFileInput,
+		libraryFiles:      []string{},
+		folderBrowser:     NewFolderBrowser(cwd),
+		browsingStartDir:  cwd,
+		focusedField:      FieldName,
+		testCases:         []policy.TestCase{},
+		multiProcessExecs: []policy.ProcessConfig{},
+		testScenarios:     []policy.MultiProcessScenario{},
 	}
 
 	pe.testCaseInputs.name = tcNameInput
@@ -321,6 +321,7 @@ func (e *PolicyEditor) resetProcessInputs() {
 	e.processInputs.sourceFile.Blur()
 	e.processInputs.args.Blur()
 	e.processInputs.delayMs.Blur()
+	e.errorMsg = ""
 }
 
 func (e *PolicyEditor) resetScenarioInputs() {
@@ -976,9 +977,6 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 					if proc.Name == "" {
 						proc.Name = fmt.Sprintf("Process %d", len(e.multiProcessExecs)+1)
 					}
-					if proc.SourceFile == "" {
-						proc.SourceFile = "main.c"
-					}
 					if args := e.processInputs.args.Value(); args != "" {
 						proc.Args = strings.Fields(args)
 					}
@@ -1627,10 +1625,8 @@ func (e *PolicyEditor) save() tea.Cmd {
 
 		p := struct {
 			Name     string `yaml:"name"`
-			Root     string `yaml:"root"`
 			Discover struct {
-				LeafSubmission bool `yaml:"leaf_submission"`
-				MinCFiles      int  `yaml:"min_c_files"`
+				MinCFiles int `yaml:"min_c_files"`
 			} `yaml:"discover"`
 			Compile struct {
 				GCC        string   `yaml:"gcc"`
@@ -1638,7 +1634,6 @@ func (e *PolicyEditor) save() tea.Cmd {
 				SourceFile string   `yaml:"source_file,omitempty"`
 			} `yaml:"compile"`
 			Run struct {
-				Timeout      string         `yaml:"timeout,omitempty"`
 				TestCases    []TestCaseYAML `yaml:"test_cases,omitempty"`
 				MultiProcess *struct {
 					Enabled     bool `yaml:"enabled"`
@@ -1663,8 +1658,6 @@ func (e *PolicyEditor) save() tea.Cmd {
 		}{}
 
 		p.Name = name
-		p.Root = "."
-		p.Discover.LeafSubmission = true
 		p.Discover.MinCFiles = 1
 		p.Compile.GCC = "gcc"
 		p.Compile.Flags = flags
@@ -1818,6 +1811,10 @@ func (e *PolicyEditor) View() string {
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
+		if e.errorMsg != "" {
+			b.WriteString(styles.ErrorStyle.Render("  Error: " + e.errorMsg))
+			b.WriteString("\n")
+		}
 		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
 
 		return b.String()
@@ -2482,20 +2479,6 @@ func (e *PolicyEditor) renderListSection(title string, items []string, cursor in
 	return content.String()
 }
 
-func (e *PolicyEditor) renderField(label, input string, field PolicyEditorField) string {
-	var b strings.Builder
-
-	if e.focusedField == field {
-		b.WriteString(styles.Highlight.Render("> " + label))
-	} else {
-		b.WriteString(styles.Subtle.Render("  " + label))
-	}
-	b.WriteString("\n")
-	b.WriteString("  " + input + "\n")
-
-	return b.String()
-}
-
 func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEditorField) string {
 	var b strings.Builder
 
@@ -2504,31 +2487,6 @@ func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEdito
 	} else {
 		b.WriteString(styles.Subtle.Render("  " + label + ":"))
 	}
-	b.WriteString("\n  " + input + "\n")
-
-	return b.String()
-}
-
-func (e *PolicyEditor) renderFieldCompactWithHint(label, input string, field PolicyEditorField) string {
-	var b strings.Builder
-
-	labelParts := strings.SplitN(label, " (", 2)
-	mainLabel := labelParts[0]
-	var hint string
-	if len(labelParts) > 1 {
-		hint = "(" + labelParts[1] // Restore the "("
-	}
-
-	if e.focusedField == field {
-		b.WriteString(styles.Highlight.Render("> " + mainLabel + ":"))
-	} else {
-		b.WriteString(styles.Subtle.Render("  " + mainLabel + ":"))
-	}
-
-	if hint != "" {
-		b.WriteString(" " + styles.SubtleText.Render(hint))
-	}
-	
 	b.WriteString("\n  " + input + "\n")
 
 	return b.String()

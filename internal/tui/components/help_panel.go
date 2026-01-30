@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felipetrejos/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type HelpItem struct {

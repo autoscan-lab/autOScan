@@ -2,13 +2,6 @@
 
 ## High Priority
 
-### Plagiarism Detection (Tree-sitter window-hash algorithm)
-
-- [ ] **TUI pair detail view**
-  - Side-by-side views: left file A, right file B
-  - Highlight matched spans; keyboard navigation between matches
-  - Summary header: window Jaccard, per-function similarity, match counts
-
 ## Low Priority
 
 - [ ] **TUI view refactor**

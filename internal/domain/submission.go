@@ -1,14 +1,11 @@
 package domain
 
 type Submission struct {
-	ID           string
-	Path         string
-	CFiles       []string
-	MissingFiles []string
+	ID     string
+	Path   string
+	CFiles []string
 }
 
-func NewSubmission(id, path string, cFiles, missingFiles []string) Submission {
-	return Submission{ID: id, Path: path, CFiles: cFiles, MissingFiles: missingFiles}
+func NewSubmission(id, path string, cFiles []string) Submission {
+	return Submission{ID: id, Path: path, CFiles: cFiles}
 }
-
-func (s Submission) HasMissingFiles() bool { return len(s.MissingFiles) > 0 }

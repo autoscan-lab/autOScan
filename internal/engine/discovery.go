@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/felipetrejos/autoscan/internal/domain"
-	"github.com/felipetrejos/autoscan/internal/policy"
+	"github.com/feli05/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/policy"
 )
 
 type DiscoveryEngine struct {
@@ -54,7 +54,6 @@ func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 				relPath,
 				path,
 				cFiles,
-				e.checkMissingFiles(cFiles),
 			))
 		}
 
@@ -66,26 +65,6 @@ func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 	}
 
 	return submissions, nil
-}
-
-func (e *DiscoveryEngine) checkMissingFiles(cFiles []string) []string {
-	if len(e.policy.RequiredFiles) == 0 {
-		return nil
-	}
-
-	// Case-insensitive lookup
-	present := make(map[string]bool)
-	for _, f := range cFiles {
-		present[strings.ToLower(f)] = true
-	}
-
-	var missing []string
-	for _, req := range e.policy.RequiredFiles {
-		if !present[strings.ToLower(req)] {
-			missing = append(missing, req)
-		}
-	}
-	return missing
 }
 
 // checkLeafFolder returns true if dir has no non-hidden subdirectories.
@@ -113,4 +92,3 @@ func (e *DiscoveryEngine) checkLeafFolder(dir string) (bool, []string, error) {
 
 	return !hasSubdirs, cFiles, nil
 }
-

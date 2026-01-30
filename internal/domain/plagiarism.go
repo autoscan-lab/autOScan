@@ -6,14 +6,6 @@ type CompareConfig struct {
 	ScoreThreshold float64
 }
 
-func DefaultCompareConfig() CompareConfig {
-	return CompareConfig{
-		WindowSize:     6,
-		MinFuncTokens:  14,
-		ScoreThreshold: 0.6,
-	}
-}
-
 type FileFingerprint struct {
 	FunctionHashes  map[string]struct{}
 	WindowHashes    map[string]struct{}
@@ -36,10 +28,10 @@ type TokenSpan struct {
 }
 
 type MatchSpan struct {
-	StartLine int    // 1-based line number
-	StartCol  int    // 1-based column number
-	EndLine   int    // 1-based line number
-	EndCol    int    // 1-based column number
+	StartLine int // 1-based line number
+	StartCol  int // 1-based column number
+	EndLine   int // 1-based line number
+	EndCol    int // 1-based column number
 	Snippet   string
 }
 

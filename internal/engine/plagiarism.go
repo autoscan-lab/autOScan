@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/felipetrejos/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/domain"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/c"
 )

@@ -9,10 +9,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felipetrejos/autoscan/internal/domain"
-	"github.com/felipetrejos/autoscan/internal/export"
-	"github.com/felipetrejos/autoscan/internal/tui/components"
-	"github.com/felipetrejos/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/export"
+	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 const logo = `
@@ -230,12 +230,6 @@ func (m Model) renderPolicySelect() string {
 			}
 			details.WriteString("\n")
 
-			if len(p.RequiredFiles) > 0 {
-				details.WriteString(styles.SubtleText.Render("  Required: "))
-				details.WriteString(strings.Join(p.RequiredFiles, ", "))
-				details.WriteString("\n")
-			}
-
 			if len(p.LibraryFiles) > 0 {
 				details.WriteString(styles.SubtleText.Render("  Libraries:"))
 				details.WriteString(strings.Join(p.LibraryFiles, ", "))
@@ -304,6 +298,11 @@ func (m Model) renderPolicySelect() string {
 		{Key: "enter", Desc: "select"},
 		{Key: "esc", Desc: "back"},
 	}))
+
+	if m.inputError != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.ErrorText.Render("  " + m.inputError))
+	}
 
 	return b.String()
 }
@@ -568,6 +567,10 @@ func (m Model) renderSubmissions() string {
 
 	b.WriteString("\n")
 
+	if m.pairDetailOpen {
+		b.WriteString(m.renderPairDetail())
+		return b.String()
+	}
 	if m.submissionsTab == 0 {
 		b.WriteString(m.renderSubmissionsResults())
 	} else {
@@ -692,13 +695,8 @@ func (m Model) renderSubmissionsResults() string {
 		var statusStyled string
 		switch r.Status {
 		case domain.StatusClean:
-			if r.Submission.HasMissingFiles() {
-				statusText = "[~]"
-				statusStyled = styles.WarningText.Render(statusText)
-			} else {
-				statusText = "[OK]"
-				statusStyled = styles.SuccessText.Render(statusText)
-			}
+			statusText = "[OK]"
+			statusStyled = styles.SuccessText.Render(statusText)
 		case domain.StatusBanned:
 			statusText = "[!]"
 			statusStyled = styles.WarningText.Render(statusText)
@@ -742,9 +740,6 @@ func (m Model) renderSubmissionsResults() string {
 		var bannedText, bannedStyled string
 		if r.Scan.TotalHits() > 0 {
 			bannedText = fmt.Sprintf("%d", r.Scan.TotalHits())
-			bannedStyled = styles.WarningText.Render(bannedText)
-		} else if r.Submission.HasMissingFiles() {
-			bannedText = fmt.Sprintf("miss:%d", len(r.Submission.MissingFiles))
 			bannedStyled = styles.WarningText.Render(bannedText)
 		} else {
 			bannedText = "-"
@@ -984,10 +979,323 @@ func (m Model) renderSubmissionsSimilarity() string {
 		{Key: "tab", Desc: "switch to results"},
 		{Key: "h/l", Desc: "prev/next process"},
 		{Key: "↑/↓", Desc: "navigate"},
+		{Key: "enter", Desc: "pair detail"},
 		{Key: "esc", Desc: "back"},
 	}))
 
 	return b.String()
+}
+
+var pairDetailHighlightStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#334155")).
+	Foreground(styles.Text)
+
+func (m Model) renderPairDetail() string {
+	var b strings.Builder
+
+	pairs := m.similarityPairsByProcess[m.pairDetailProcess]
+	if m.pairDetailPairIndex >= len(pairs) {
+		b.WriteString(styles.SubtleText.Render("No pair selected."))
+		return b.String()
+	}
+	pair := pairs[m.pairDetailPairIndex]
+	res := pair.Result
+
+	if m.pairDetailLoadErr != "" {
+		b.WriteString(styles.WarningText.Render("Error: " + m.pairDetailLoadErr))
+		b.WriteString("\n\n")
+		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
+		return b.String()
+	}
+	if m.pairDetailContentA == nil {
+		b.WriteString(styles.SubtleText.Render("Loading files..."))
+		b.WriteString("\n\n")
+		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
+		return b.String()
+	}
+
+	statsBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(styles.Muted).
+		Padding(0, 2).
+		MarginTop(0)
+	nameA := m.results[pair.AIndex].Submission.ID
+	nameB := m.results[pair.BIndex].Submission.ID
+	if m.settings.ShortNames {
+		if idx := strings.Index(nameA, "_"); idx > 0 {
+			nameA = nameA[:idx]
+		}
+		if idx := strings.Index(nameB, "_"); idx > 0 {
+			nameB = nameB[:idx]
+		}
+	}
+	summary := fmt.Sprintf(
+		"%s  vs  %s   ·   Jaccard: %.2f%%   Per-func: %.2f%%   Matches: %d/%d",
+		nameA, nameB,
+		res.WindowJaccard*100, res.PerFuncSimilarity*100,
+		res.WindowMatches, res.WindowUnion,
+	)
+	b.WriteString(statsBox.Render(summary))
+	b.WriteString("\n\n")
+
+	const pairDetailMaxPaneHeight = 30
+	paneHeight := min(m.visibleRows, pairDetailMaxPaneHeight)
+	if paneHeight < 8 {
+		paneHeight = 8
+	}
+
+	var spansA, spansB []domain.MatchSpan
+	for _, wm := range res.Matches {
+		spansA = append(spansA, wm.SpansA...)
+		spansB = append(spansB, wm.SpansB...)
+	}
+
+	halfWidth, contentWidth := pairDetailPaneWidths(m.width)
+
+	leftPane := renderCodePane(m.pairDetailContentA, spansA, m.pairDetailScrollA, m.pairDetailHScrollA, paneHeight, contentWidth)
+	rightPane := renderCodePane(m.pairDetailContentB, spansB, m.pairDetailScrollB, m.pairDetailHScrollB, paneHeight, contentWidth)
+
+	// Same technique as renderDiffLines: constrain each line with Width/MaxWidth before putting in box
+	lineStyle := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth)
+	leftLines := strings.Split(strings.TrimSuffix(leftPane, "\n"), "\n")
+	rightLines := strings.Split(strings.TrimSuffix(rightPane, "\n"), "\n")
+	for len(leftLines) < paneHeight {
+		leftLines = append(leftLines, strings.Repeat(" ", contentWidth))
+	}
+	for len(rightLines) < paneHeight {
+		rightLines = append(rightLines, strings.Repeat(" ", contentWidth))
+	}
+
+	var leftContent, rightContent strings.Builder
+	for i := 0; i < paneHeight; i++ {
+		leftContent.WriteString(lineStyle.Render(leftLines[i]))
+		leftContent.WriteString("\n")
+		rightContent.WriteString(lineStyle.Render(rightLines[i]))
+		rightContent.WriteString("\n")
+	}
+
+	leftBorderColor := styles.Muted
+	rightBorderColor := styles.Muted
+	if m.pairDetailFocusedPane == 0 {
+		leftBorderColor = styles.Primary
+	} else {
+		rightBorderColor = styles.Primary
+	}
+
+	leftBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(leftBorderColor).
+		Padding(0, 1).
+		Width(halfWidth).
+		Render(strings.TrimSuffix(leftContent.String(), "\n"))
+	rightBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(rightBorderColor).
+		Padding(0, 1).
+		Width(halfWidth).
+		Render(strings.TrimSuffix(rightContent.String(), "\n"))
+
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftBox, "  ", rightBox))
+
+	matchInfo := ""
+	if len(res.Matches) > 0 {
+		matchInfo = fmt.Sprintf("  %d matches", len(res.Matches))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+		{Key: "↑/↓", Desc: "scroll"},
+		{Key: "←/→", Desc: "pan"},
+		{Key: "h/l", Desc: "switch pane"},
+		{Key: "esc", Desc: "back"},
+	}))
+	if matchInfo != "" {
+		b.WriteString(styles.SubtleText.Render(matchInfo))
+	}
+	return b.String()
+}
+
+const pairDetailTabWidth = 8
+
+func pairDetailPaneWidths(totalWidth int) (halfWidth, contentWidth int) {
+	halfWidth = (totalWidth - 6) / 2
+	if halfWidth < 20 {
+		halfWidth = 20
+	}
+	// Same as renderProcessBox/renderExecuteResult: content width = box width - border - padding
+	contentWidth = halfWidth - 4
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	return halfWidth, contentWidth
+}
+
+func expandTabsForPane(s string, width int) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	col := 0
+	for _, r := range s {
+		if r == '\t' {
+			spaces := width - (col % width)
+			if spaces == 0 {
+				spaces = width
+			}
+			b.WriteString(strings.Repeat(" ", spaces))
+			col += spaces
+			continue
+		}
+		b.WriteRune(r)
+		col += lipgloss.Width(string(r))
+	}
+	return b.String()
+}
+
+func sliceDisplayWindow(s string, start, width int) string {
+	if width <= 0 || s == "" {
+		return ""
+	}
+	if start < 0 {
+		start = 0
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	col := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if col+rw <= start {
+			col += rw
+			continue
+		}
+		if col-start+rw > width {
+			break
+		}
+		b.WriteRune(r)
+		col += rw
+	}
+	return b.String()
+}
+
+func byteColToDisplayCol(line string, byteCol, tabWidth int) int {
+	if byteCol <= 1 {
+		return 1
+	}
+	target := byteCol - 1
+	col := 1
+	for idx, r := range line {
+		if idx >= target {
+			break
+		}
+		if r == '\t' {
+			spaces := tabWidth - ((col - 1) % tabWidth)
+			if spaces == 0 {
+				spaces = tabWidth
+			}
+			col += spaces
+			continue
+		}
+		col += lipgloss.Width(string(r))
+	}
+	return col
+}
+
+func renderCodePane(content []byte, spans []domain.MatchSpan, scrollLine, hScroll, height, width int) string {
+	lines := strings.Split(string(content), "\n")
+	blankLine := strings.Repeat(" ", width) + "\n"
+
+	var b strings.Builder
+	contentLines := 0
+	if scrollLine < len(lines) {
+		end := scrollLine + height
+		if end > len(lines) {
+			end = len(lines)
+		}
+		contentLines = end - scrollLine
+		for i := scrollLine; i < end; i++ {
+			rawLine := components.SanitizeDisplay(lines[i])
+			line := expandTabsForPane(rawLine, pairDetailTabWidth)
+			fullLineWidth := lipgloss.Width(line)
+			line = sliceDisplayWindow(line, hScroll, width)
+			lineNum1 := i + 1
+			runes := []rune(line)
+			lineRuneLen := len(runes)
+			var ranges [][2]int
+			for _, sp := range spans {
+				if sp.EndLine < lineNum1 || sp.StartLine > lineNum1 {
+					continue
+				}
+				startCol := byteColToDisplayCol(rawLine, sp.StartCol, pairDetailTabWidth)
+				endCol := byteColToDisplayCol(rawLine, sp.EndCol, pairDetailTabWidth)
+				if sp.StartLine == lineNum1 && sp.EndLine == lineNum1 {
+					// segment on this line
+				} else if sp.StartLine == lineNum1 {
+					endCol = fullLineWidth + 1
+				} else if sp.EndLine == lineNum1 {
+					startCol = 1
+				} else {
+					startCol = 1
+					endCol = fullLineWidth + 1
+				}
+				startIdx := (startCol - 1) - hScroll
+				if startIdx < 0 {
+					startIdx = 0
+				}
+				endIdx := endCol - hScroll
+				if endIdx > lineRuneLen {
+					endIdx = lineRuneLen
+				}
+				if startIdx < endIdx {
+					ranges = append(ranges, [2]int{startIdx, endIdx})
+				}
+			}
+			merged := mergeRanges(ranges)
+			if len(merged) == 0 {
+				b.WriteString(string(runes))
+			} else {
+				last := 0
+				for _, r := range merged {
+					if r[0] > last {
+						b.WriteString(string(runes[last:r[0]]))
+					}
+					seg := string(runes[r[0]:r[1]])
+					b.WriteString(pairDetailHighlightStyle.Render(seg))
+					last = r[1]
+				}
+				if last < lineRuneLen {
+					b.WriteString(string(runes[last:]))
+				}
+			}
+			lineWidth := lipgloss.Width(line)
+			if lineWidth < width {
+				b.WriteString(strings.Repeat(" ", width-lineWidth))
+			}
+			b.WriteString("\n")
+		}
+	}
+	for i := contentLines; i < height; i++ {
+		b.WriteString(blankLine)
+	}
+	return b.String()
+}
+
+func mergeRanges(ranges [][2]int) [][2]int {
+	if len(ranges) == 0 {
+		return nil
+	}
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i][0] < ranges[j][0] })
+	out := [][2]int{ranges[0]}
+	for i := 1; i < len(ranges); i++ {
+		cur := &out[len(out)-1]
+		if ranges[i][0] <= cur[1] {
+			if ranges[i][1] > cur[1] {
+				cur[1] = ranges[i][1]
+			}
+			continue
+		}
+		out = append(out, ranges[i])
+	}
+	return out
 }
 
 func (m Model) renderDetails() string {
@@ -1000,7 +1308,6 @@ func (m Model) renderDetails() string {
 
 	r := filtered[m.cursor]
 
-	// Header
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(styles.Primary).
@@ -1058,9 +1365,9 @@ func (m Model) renderDetails() string {
 		}))
 	case 3:
 		helpItems := []components.HelpItem{
-		{Key: "tab", Desc: "switch tabs"},
-		{Key: "↑/↓", Desc: "navigate"},
-		{Key: "enter", Desc: "run/focus"},
+			{Key: "tab", Desc: "switch tabs"},
+			{Key: "↑/↓", Desc: "navigate"},
+			{Key: "enter", Desc: "run/focus"},
 		}
 		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 			if mp := m.policies[m.selectedPolicy].Run.MultiProcess; mp != nil && mp.Enabled {
@@ -1153,12 +1460,12 @@ func truncatePathToFilename(s string) string {
 
 func truncatePathsInText(text string) string {
 	result := text
-	
+
 	parts := strings.Split(result, "/")
 	if len(parts) > 1 {
 		result = truncateAbsolutePaths(result)
 	}
-	
+
 	return result
 }
 
@@ -1705,12 +2012,12 @@ func (m Model) renderExecuteResult(r domain.ExecuteResult) string {
 
 	var outputLines []string
 	if r.OutputMatch == domain.OutputMatchFail && len(r.OutputDiff) > 0 {
-			outputLines = append(outputLines, renderDiffLines(r.OutputDiff, contentWidth)...)
-			if r.Stderr != "" {
-				outputLines = appendStderrBlock(outputLines, r.Stderr, contentWidth)
-			}
-		} else {
-			allOutput := components.SanitizeDisplay(r.Stdout)
+		outputLines = append(outputLines, renderDiffLines(r.OutputDiff, contentWidth)...)
+		if r.Stderr != "" {
+			outputLines = appendStderrBlock(outputLines, r.Stderr, contentWidth)
+		}
+	} else {
+		allOutput := components.SanitizeDisplay(r.Stdout)
 		if r.Stderr != "" {
 			if allOutput != "" {
 				allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)

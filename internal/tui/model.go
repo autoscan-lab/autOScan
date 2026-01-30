@@ -7,12 +7,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felipetrejos/autoscan/internal/config"
-	"github.com/felipetrejos/autoscan/internal/domain"
-	"github.com/felipetrejos/autoscan/internal/engine"
-	"github.com/felipetrejos/autoscan/internal/policy"
-	"github.com/felipetrejos/autoscan/internal/tui/components"
-	"github.com/felipetrejos/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/config"
+	"github.com/feli05/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/engine"
+	"github.com/feli05/autoscan/internal/policy"
+	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type View int
@@ -74,22 +74,22 @@ type (
 		sub    domain.Submission
 		result domain.CompileResult
 	}
-	runCompleteMsg         domain.RunReport
-	errorMsg               error
-	exportDoneMsg          struct{ format, path string }
-	uninstallDoneMsg       struct{}
-	bannedListLoadedMsg    []string
-	bannedListSavedMsg     struct{}
-	executeResultMsg       struct{ result domain.ExecuteResult }
-	executeTestResultsMsg  struct{ results []domain.ExecuteResult }
-	multiProcessResultMsg  struct{ result *domain.MultiProcessResult }
-	multiProcessUpdateMsg  struct{ result *domain.MultiProcessResult }
-	multiProcessTickMsg    struct{}
-	similarityStartedMsg   struct {
+	runCompleteMsg        domain.RunReport
+	errorMsg              error
+	exportDoneMsg         struct{ format, path string }
+	uninstallDoneMsg      struct{}
+	bannedListLoadedMsg   []string
+	bannedListSavedMsg    struct{}
+	executeResultMsg      struct{ result domain.ExecuteResult }
+	executeTestResultsMsg struct{ results []domain.ExecuteResult }
+	multiProcessResultMsg struct{ result *domain.MultiProcessResult }
+	multiProcessUpdateMsg struct{ result *domain.MultiProcessResult }
+	multiProcessTickMsg   struct{}
+	similarityStartedMsg  struct {
 		process string
 		runID   int64
 	}
-	similarityComputedMsg  struct {
+	similarityComputedMsg struct {
 		process string
 		pairs   []SimilarityPair
 		runID   int64
@@ -98,6 +98,14 @@ type (
 		process string
 		err     error
 		runID   int64
+	}
+	pairDetailLoadedMsg struct {
+		process   string
+		pairIndex int
+		contentA  []byte
+		contentB  []byte
+		err       error
+		runID     int64
 	}
 )
 
@@ -187,8 +195,38 @@ type Model struct {
 	similarityCursor         int
 	similarityScroll         int
 
+	pairDetailOpen        bool
+	pairDetailProcess     string
+	pairDetailPairIndex   int
+	pairDetailContentA    []byte
+	pairDetailContentB    []byte
+	pairDetailLoadErr     string
+	pairDetailFocusedPane int // 0 = left (A), 1 = right (B)
+	pairDetailScrollA     int
+	pairDetailScrollB     int
+	pairDetailHScrollA    int
+	pairDetailHScrollB    int
+
 	exportCursor int
 	statusMsg    string
+}
+
+func (m *Model) resetPairDetailViewState() {
+	m.pairDetailContentA = nil
+	m.pairDetailContentB = nil
+	m.pairDetailLoadErr = ""
+	m.pairDetailFocusedPane = 0
+	m.pairDetailScrollA = 0
+	m.pairDetailScrollB = 0
+	m.pairDetailHScrollA = 0
+	m.pairDetailHScrollB = 0
+}
+
+func (m *Model) resetPairDetailState() {
+	m.pairDetailOpen = false
+	m.pairDetailProcess = ""
+	m.pairDetailPairIndex = 0
+	m.resetPairDetailViewState()
 }
 
 type Config struct {
@@ -229,23 +267,23 @@ func New(cfg Config) Model {
 	helpPanel := components.NewHelpPanel(28, styles.Version)
 
 	return Model{
-		currentView:   ViewHome,
-		width:         minWidth,
-		height:        minHeight,
-		settings:      settings,
-		root:          root,
-		spinner:       s,
-		folderBrowser: NewFolderBrowser(root),
-		visibleRows:   20,
-		filter:        FilterAll,
-		searchInput:   searchInput,
-		menuItem:      MenuRunGrader,
-		policyEditor:  NewPolicyEditor(80, 40),
-		bannedInput:   bannedInput,
-		runArgsInput:  runArgsInput,
-		runStdinInput: runStdinInput,
-		eyeAnimation:  components.NewEyeAnimation(),
-		helpPanel:     helpPanel,
+		currentView:              ViewHome,
+		width:                    minWidth,
+		height:                   minHeight,
+		settings:                 settings,
+		root:                     root,
+		spinner:                  s,
+		folderBrowser:            NewFolderBrowser(root),
+		visibleRows:              20,
+		filter:                   FilterAll,
+		searchInput:              searchInput,
+		menuItem:                 MenuRunGrader,
+		policyEditor:             NewPolicyEditor(80, 40),
+		bannedInput:              bannedInput,
+		runArgsInput:             runArgsInput,
+		runStdinInput:            runStdinInput,
+		eyeAnimation:             components.NewEyeAnimation(),
+		helpPanel:                helpPanel,
 		submissionsTab:           0,
 		similaritySelectedProc:   0,
 		similarityPairsByProcess: make(map[string][]SimilarityPair),

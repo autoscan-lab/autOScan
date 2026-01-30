@@ -5,7 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/felipetrejos/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type AnimationTickMsg time.Time

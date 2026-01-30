@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/felipetrejos/autoscan/internal/domain"
-	"github.com/felipetrejos/autoscan/internal/policy"
+	"github.com/feli05/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/policy"
 )
 
 const (

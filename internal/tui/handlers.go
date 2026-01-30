@@ -10,11 +10,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/felipetrejos/autoscan/internal/config"
-	"github.com/felipetrejos/autoscan/internal/domain"
-	"github.com/felipetrejos/autoscan/internal/engine"
-	"github.com/felipetrejos/autoscan/internal/policy"
-	"github.com/felipetrejos/autoscan/internal/tui/components"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/feli05/autoscan/internal/config"
+	"github.com/feli05/autoscan/internal/domain"
+	"github.com/feli05/autoscan/internal/engine"
+	"github.com/feli05/autoscan/internal/policy"
+	"github.com/feli05/autoscan/internal/tui/components"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -91,6 +92,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.similarityScroll = 0
 		m.initSimilarityProcesses()
 
+		m.resetPairDetailState()
+
 	case errorMsg:
 		m.runError = msg.Error()
 		m.isRunning = false
@@ -117,6 +120,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.similarityStateByProcess[msg.process] = SimilarityError
 			m.similarityErrorByProcess[msg.process] = msg.err.Error()
 			delete(m.similarityInFlight, msg.process)
+		}
+
+	case pairDetailLoadedMsg:
+		if msg.runID == m.runID && msg.process == m.pairDetailProcess && msg.pairIndex == m.pairDetailPairIndex {
+			m.pairDetailContentA = msg.contentA
+			m.pairDetailContentB = msg.contentB
+			if msg.err != nil {
+				m.pairDetailLoadErr = msg.err.Error()
+			} else {
+				m.pairDetailLoadErr = ""
+			}
 		}
 
 	case policySavedMsg:
@@ -250,31 +264,54 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-
 func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
 		if m.selectedPolicy < len(m.policies)-1 {
 			m.selectedPolicy++
 			m.executor = nil
+			m.inputError = ""
 		}
 	case "k", "up":
 		if m.selectedPolicy > 0 {
 			m.selectedPolicy--
 			m.executor = nil
+			m.inputError = ""
 		}
 	case "enter":
 		if len(m.policies) > 0 {
+			if m.selectedPolicy < len(m.policies) {
+				p := m.policies[m.selectedPolicy]
+				if p != nil {
+					isMulti := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
+					if isMulti {
+						if len(p.Run.MultiProcess.Executables) == 0 {
+							m.inputError = "Multi-process policy needs at least one executable"
+							return m, nil
+						}
+						for _, proc := range p.Run.MultiProcess.Executables {
+							if strings.TrimSpace(proc.SourceFile) == "" {
+								m.inputError = "Multi-process policy has a missing source file"
+								return m, nil
+							}
+						}
+					} else if strings.TrimSpace(p.Compile.SourceFile) == "" {
+						m.inputError = "Single-process policy requires source_file"
+						return m, nil
+					}
+				}
+			}
+			m.inputError = ""
 			m.currentView = ViewDirectoryInput
 			m.folderBrowser.Reset(m.root)
 			return m, nil
 		}
 	case "q", "esc":
+		m.inputError = ""
 		m.currentView = ViewHome
 	}
 	return m, nil
 }
-
 
 func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	maxCursor := len(m.policies)
@@ -319,7 +356,6 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
 
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" && !m.policyEditor.InSubMode() {
@@ -425,7 +461,6 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-
 func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -444,10 +479,13 @@ func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-
 func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.isRunning {
 		return m, nil
+	}
+
+	if m.pairDetailOpen {
+		return m.updateSubmissionsPairDetail(msg)
 	}
 
 	if msg.String() == "tab" {
@@ -572,6 +610,7 @@ func (m Model) updateSubmissionsSimilarity(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		m.currentView = ViewHome
 		m.results = nil
 		m.report = nil
+		m.resetPairDetailState()
 		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
 		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
 		m.similarityErrorByProcess = make(map[string]string)
@@ -634,11 +673,135 @@ func (m Model) updateSubmissionsSimilarity(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				return m, m.computeSimilarityForProcess(proc)
 			}
 		}
+	case "enter":
+		if len(pairs) == 0 || m.similarityCursor >= len(pairs) {
+			return m, nil
+		}
+		pair := pairs[m.similarityCursor]
+		srcFile := m.resolveSimilaritySourceFile(currentProc)
+		if srcFile == "" && len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
+			srcFile = m.results[0].Submission.CFiles[0]
+		}
+		if srcFile == "" {
+			return m, nil
+		}
+		pathA := filepath.Join(m.results[pair.AIndex].Submission.Path, srcFile)
+		pathB := filepath.Join(m.results[pair.BIndex].Submission.Path, srcFile)
+		m.resetPairDetailViewState()
+		m.pairDetailOpen = true
+		m.pairDetailProcess = currentProc
+		m.pairDetailPairIndex = m.similarityCursor
+		return m, loadPairDetailFiles(currentProc, m.similarityCursor, pathA, pathB, m.runID)
 	}
-
 	return m, nil
 }
 
+func loadPairDetailFiles(process string, pairIndex int, pathA, pathB string, runID int64) tea.Cmd {
+	return func() tea.Msg {
+		contentA, errA := os.ReadFile(pathA)
+		if errA != nil {
+			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: nil, contentB: nil, err: errA, runID: runID}
+		}
+		contentB, errB := os.ReadFile(pathB)
+		if errB != nil {
+			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: nil, err: errB, runID: runID}
+		}
+		return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: contentB, err: nil, runID: runID}
+	}
+}
+
+func (m Model) updateSubmissionsPairDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pairs := m.similarityPairsByProcess[m.pairDetailProcess]
+	if m.pairDetailPairIndex >= len(pairs) {
+		m.resetPairDetailState()
+		return m, nil
+	}
+
+	const pairDetailMaxPaneHeight = 30
+	paneHeight := pairDetailMaxPaneHeight
+	if m.visibleRows < paneHeight {
+		paneHeight = m.visibleRows
+	}
+	if paneHeight < 8 {
+		paneHeight = 8
+	}
+
+	linesA := len(strings.Split(string(m.pairDetailContentA), "\n"))
+	linesB := len(strings.Split(string(m.pairDetailContentB), "\n"))
+	maxScrollA := max(0, linesA-paneHeight)
+	maxScrollB := max(0, linesB-paneHeight)
+	_, contentWidth := pairDetailPaneWidths(m.width)
+	maxHScrollA := max(0, maxDisplayWidthForContent(m.pairDetailContentA)-contentWidth)
+	maxHScrollB := max(0, maxDisplayWidthForContent(m.pairDetailContentB)-contentWidth)
+
+	switch msg.String() {
+	case "esc", "q":
+		m.pairDetailOpen = false
+		return m, nil
+	case "h":
+		m.pairDetailFocusedPane = 0
+		return m, nil
+	case "l":
+		m.pairDetailFocusedPane = 1
+		return m, nil
+	case "down":
+		if m.pairDetailFocusedPane == 0 {
+			if m.pairDetailScrollA < maxScrollA {
+				m.pairDetailScrollA++
+			}
+		} else {
+			if m.pairDetailScrollB < maxScrollB {
+				m.pairDetailScrollB++
+			}
+		}
+	case "up":
+		if m.pairDetailFocusedPane == 0 {
+			if m.pairDetailScrollA > 0 {
+				m.pairDetailScrollA--
+			}
+		} else {
+			if m.pairDetailScrollB > 0 {
+				m.pairDetailScrollB--
+			}
+		}
+	case "right":
+		if m.pairDetailFocusedPane == 0 {
+			if m.pairDetailHScrollA < maxHScrollA {
+				m.pairDetailHScrollA++
+			}
+		} else {
+			if m.pairDetailHScrollB < maxHScrollB {
+				m.pairDetailHScrollB++
+			}
+		}
+	case "left":
+		if m.pairDetailFocusedPane == 0 {
+			if m.pairDetailHScrollA > 0 {
+				m.pairDetailHScrollA--
+			}
+		} else {
+			if m.pairDetailHScrollB > 0 {
+				m.pairDetailHScrollB--
+			}
+		}
+	}
+	return m, nil
+}
+
+func maxDisplayWidthForContent(content []byte) int {
+	if len(content) == 0 {
+		return 0
+	}
+	maxWidth := 0
+	for _, line := range strings.Split(string(content), "\n") {
+		line = components.SanitizeDisplay(line)
+		line = expandTabsForPane(line, pairDetailTabWidth)
+		if w := lipgloss.Width(line); w > maxWidth {
+			maxWidth = w
+		}
+	}
+	return maxWidth
+}
 
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	getBannedFuncCount := func() int {
@@ -1052,7 +1215,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-
 func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
@@ -1072,7 +1234,6 @@ func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
 
 func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.bannedEditing {
@@ -1135,7 +1296,6 @@ func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-
 func (m *Model) loadPolicies() tea.Cmd {
 	return func() tea.Msg {
 		if err := config.Init(); err != nil {
@@ -1179,6 +1339,8 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.similaritySelectedProc = 0
 	m.similarityCursor = 0
 	m.similarityScroll = 0
+
+	m.resetPairDetailState()
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries
@@ -1385,7 +1547,6 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 		},
 	)
 }
-
 
 func (m Model) filteredResults() []domain.SubmissionResult {
 	if m.results == nil {
