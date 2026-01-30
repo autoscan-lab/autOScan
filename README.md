@@ -241,10 +241,6 @@ run:
 - `expected_exit` - Expected exit code (for pass/fail validation)
 - `expected_output_file` - Optional stdout comparison file (diff shown in results)
 
-### Additional Policy Fields
-
-- `discover.min_c_files` - Minimum number of `.c` files to accept a submission
-
 Select a test case and press Enter to run it.
 
 ### Multi-Process Mode

@@ -17,7 +17,7 @@ func NewDiscoveryEngine(p *policy.Policy) *DiscoveryEngine {
 	return &DiscoveryEngine{policy: p}
 }
 
-// Discover finds all leaf folders containing at least MinCFiles .c files.
+// Discover finds all leaf folders that contain at least one .c file.
 func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 	var submissions []domain.Submission
 
@@ -44,7 +44,7 @@ func (e *DiscoveryEngine) Discover(root string) ([]domain.Submission, error) {
 			return err
 		}
 
-		if isLeaf && len(cFiles) >= e.policy.Discover.MinCFiles {
+		if isLeaf && len(cFiles) > 0 {
 			relPath, err := filepath.Rel(absRoot, path)
 			if err != nil {
 				relPath = d.Name()

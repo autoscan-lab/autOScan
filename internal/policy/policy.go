@@ -11,18 +11,13 @@ import (
 )
 
 type Policy struct {
-	Name            string         `yaml:"name"`
-	Discover        DiscoverConfig `yaml:"discover"`
-	Compile         CompileConfig  `yaml:"compile"`
-	Run             RunConfig      `yaml:"run"`
-	LibraryFiles    []string       `yaml:"library_files"` // .c/.o/.h files from ~/.config/autoscan/libraries/
-	TestFiles       []string       `yaml:"test_files,omitempty"`
-	FilePath        string         `yaml:"-"` // Set after loading
-	BannedFunctions []string       `yaml:"-"` // Loaded from global banned.yaml
-}
-
-type DiscoverConfig struct {
-	MinCFiles int `yaml:"min_c_files"`
+	Name            string        `yaml:"name"`
+	Compile         CompileConfig `yaml:"compile"`
+	Run             RunConfig     `yaml:"run"`
+	LibraryFiles    []string      `yaml:"library_files"` // .c/.o/.h files from ~/.config/autoscan/libraries/
+	TestFiles       []string      `yaml:"test_files,omitempty"`
+	FilePath        string        `yaml:"-"` // Set after loading
+	BannedFunctions []string      `yaml:"-"` // Loaded from global banned.yaml
 }
 
 type CompileConfig struct {
@@ -78,9 +73,6 @@ func Load(path string) (*Policy, error) {
 	}
 
 	p.FilePath = path
-	if p.Discover.MinCFiles == 0 {
-		p.Discover.MinCFiles = 1
-	}
 	if p.Compile.GCC == "" {
 		p.Compile.GCC = "gcc"
 	}

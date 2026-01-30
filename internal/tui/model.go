@@ -175,7 +175,6 @@ type Model struct {
 	runInputFocused        int
 	runResult              *domain.ExecuteResult
 	runTestResults         []domain.ExecuteResult
-	runTestCursor          int
 	isExecuting            bool
 	executor               *engine.Executor
 	multiProcessResult     *domain.MultiProcessResult

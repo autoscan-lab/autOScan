@@ -1624,10 +1624,7 @@ func (e *PolicyEditor) save() tea.Cmd {
 		}
 
 		p := struct {
-			Name     string `yaml:"name"`
-			Discover struct {
-				MinCFiles int `yaml:"min_c_files"`
-			} `yaml:"discover"`
+			Name    string `yaml:"name"`
 			Compile struct {
 				GCC        string   `yaml:"gcc"`
 				Flags      []string `yaml:"flags"`
@@ -1658,7 +1655,6 @@ func (e *PolicyEditor) save() tea.Cmd {
 		}{}
 
 		p.Name = name
-		p.Discover.MinCFiles = 1
 		p.Compile.GCC = "gcc"
 		p.Compile.Flags = flags
 		p.Compile.SourceFile = sourceFile
