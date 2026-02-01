@@ -46,7 +46,7 @@ type PolicyEditor struct {
 	testFiles          []string
 	testFilesCursor    int
 
-	folderBrowser    FolderBrowser
+	folderBrowser    components.FolderBrowser
 	browsingForLibs  bool
 	browsingForTests bool
 	browsingStartDir string
@@ -184,7 +184,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 		flagsInput:        flagsInput,
 		sourceFileInput:   sourceFileInput,
 		libraryFiles:      []string{},
-		folderBrowser:     NewFolderBrowser(cwd),
+		folderBrowser:     components.NewFolderBrowser(cwd),
 		browsingStartDir:  cwd,
 		focusedField:      FieldName,
 		testCases:         []policy.TestCase{},

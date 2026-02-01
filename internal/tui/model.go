@@ -143,7 +143,7 @@ type Model struct {
 	bannedInput      textinput.Model
 	bannedEditing    bool
 
-	folderBrowser FolderBrowser
+	folderBrowser components.FolderBrowser
 	root          string
 	inputError    string
 
@@ -272,7 +272,7 @@ func New(cfg Config) Model {
 		settings:                 settings,
 		root:                     root,
 		spinner:                  s,
-		folderBrowser:            NewFolderBrowser(root),
+		folderBrowser:            components.NewFolderBrowser(root),
 		visibleRows:              20,
 		filter:                   FilterAll,
 		searchInput:              searchInput,
