@@ -18,6 +18,7 @@ import (
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/views/banned"
 	"github.com/feli05/autoscan/internal/tui/views/directory"
+	exportview "github.com/feli05/autoscan/internal/tui/views/export"
 	"github.com/feli05/autoscan/internal/tui/views/home"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
@@ -124,7 +125,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewDetails:
 			return m.updateDetails(msg)
 		case ViewExport:
-			return m.updateExport(msg)
+			result := exportview.Update(exportview.State{
+				Width:        m.width,
+				ExportCursor: m.exportCursor,
+				Report:       m.report,
+			}, msg)
+			m.exportCursor = result.ExportCursor
+			if result.GoBack {
+				m.currentView = ViewSubmissions
+			}
+			if result.DoExport && m.report != nil {
+				return m, exportview.DoExport(*m.report, m.exportCursor)
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -175,8 +188,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.runError = msg.Error()
 		m.isRunning = false
 
-	case exportDoneMsg:
-		m.statusMsg = fmt.Sprintf("Exported to %s", msg.path)
+	case exportview.DoneMsg:
+		m.statusMsg = fmt.Sprintf("Exported to %s", msg.Path)
 
 	case similarityStartedMsg:
 		if msg.runID == m.runID {
@@ -1090,26 +1103,6 @@ func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
-}
-
-func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.exportCursor < 1 { // Only 2 options: JSON (0) and CSV (1)
-			m.exportCursor++
-		}
-	case "k", "up":
-		if m.exportCursor > 0 {
-			m.exportCursor--
-		}
-	case "enter":
-		if m.report != nil {
-			return m, m.doExport()
-		}
-	case "q", "esc":
-		m.currentView = ViewSubmissions
-	}
-	return m, nil
 }
 
 func (m *Model) loadPolicies() tea.Cmd {

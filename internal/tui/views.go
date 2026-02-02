@@ -6,14 +6,13 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/export"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/styles"
 	"github.com/feli05/autoscan/internal/tui/views/banned"
 	"github.com/feli05/autoscan/internal/tui/views/directory"
+	exportview "github.com/feli05/autoscan/internal/tui/views/export"
 	"github.com/feli05/autoscan/internal/tui/views/home"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
@@ -97,7 +96,11 @@ func (m Model) View() string {
 	case ViewDetails:
 		content = m.renderDetails()
 	case ViewExport:
-		content = m.renderExport()
+		content = exportview.View(exportview.State{
+			Width:        m.width,
+			ExportCursor: m.exportCursor,
+			Report:       m.report,
+		})
 	default:
 		contentWidth := m.width - 4
 		if contentWidth < 80 {
@@ -1771,97 +1774,4 @@ func appendStderrBlock(lines []string, stderr string, contentWidth int) []string
 	lines = append(lines, styles.WarningText.Render(lineStyle.Render("─── stderr ───")))
 	lines = append(lines, components.WrapLines(components.SanitizeDisplay(stderr), contentWidth)...)
 	return lines
-}
-
-func (m Model) renderExport() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Export Results"))
-	b.WriteString("\n\n")
-
-	boxWidth := m.width - 8
-	if boxWidth < 60 {
-		boxWidth = 60
-	}
-
-	formats := []struct {
-		name string
-		ext  string
-		desc string
-	}{
-		{
-			name: "JSON",
-			ext:  ".json",
-			desc: "Structured data for scripts & tools",
-		},
-		{
-			name: "CSV",
-			ext:  ".csv",
-			desc: "Import into Excel, Google Sheets",
-		},
-	}
-
-	for i, f := range formats {
-		borderColor := styles.Muted
-		if i == m.exportCursor {
-			borderColor = styles.Primary
-		}
-
-		formatBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor).
-			Padding(1, 2).
-			Width(boxWidth)
-
-		var content strings.Builder
-
-		if i == m.exportCursor {
-			content.WriteString("▸ ")
-			content.WriteString(styles.SelectedItem.Render(f.name))
-		} else {
-			content.WriteString("  ")
-			content.WriteString(styles.NormalItem.Render(f.name))
-		}
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf("  (%s)", f.ext)))
-		content.WriteString("\n")
-
-		content.WriteString(styles.SubtleText.Render("  " + f.desc))
-
-		b.WriteString(formatBox.Render(content.String()))
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render("  Output: ./autoscan_report" + formats[m.exportCursor].ext))
-	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{"↑/↓", "navigate"},
-		{"enter", "export"},
-		{"esc", "back"},
-	}))
-
-	return b.String()
-}
-
-func (m Model) doExport() tea.Cmd {
-	return func() tea.Msg {
-		outputDir := "."
-		var path string
-		var err error
-		var format string
-
-		switch m.exportCursor {
-		case 0:
-			format = "JSON"
-			path, err = export.JSON(*m.report, outputDir)
-		case 1:
-			format = "CSV"
-			path, err = export.CSV(*m.report, outputDir)
-		}
-
-		if err != nil {
-			return errorMsg(err)
-		}
-		return exportDoneMsg{format: format, path: path}
-	}
 }

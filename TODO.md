@@ -8,9 +8,9 @@
   - [x] Create `views/policy/` subpackage (select.go, manage.go, editor.go)
   - [x] Create `views/banned/` subpackage
   - [x] Create `views/directory/` subpackage
+  - [x] Create `views/export/` subpackage
   - [ ] Create `views/submissions/` subpackage (largest)
   - [ ] Create `views/details/` subpackage
-  - [ ] Create `views/export/` subpackage
   - [ ] Extract repeated patterns (scrollable lists, info blocks, tab bars)
 
 - [ ] **AI-generated code detection**
