@@ -13,6 +13,7 @@ import (
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/styles"
+	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 )
 
 type View int
@@ -135,7 +136,7 @@ type Model struct {
 	policies           []*policy.Policy
 	selectedPolicy     int
 	policyManageCursor int
-	policyEditor       PolicyEditor
+	policyEditor       policyview.Editor
 	confirmDelete      bool
 
 	bannedList       []string
@@ -277,7 +278,7 @@ func New(cfg Config) Model {
 		filter:                   FilterAll,
 		searchInput:              searchInput,
 		menuItem:                 MenuRunGrader,
-		policyEditor:             NewPolicyEditor(80, 40),
+		policyEditor:             policyview.NewEditor(80, 40),
 		bannedInput:              bannedInput,
 		runArgsInput:             runArgsInput,
 		runStdinInput:            runStdinInput,

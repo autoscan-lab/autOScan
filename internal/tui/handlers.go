@@ -17,6 +17,7 @@ import (
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/views/home"
+	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
 )
 
@@ -171,19 +172,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case policySavedMsg:
+	case policyview.SavedMsg:
 		m.currentView = ViewPolicyManage
-		m.statusMsg = fmt.Sprintf("Policy saved to %s", msg.path)
+		m.statusMsg = fmt.Sprintf("Policy saved to %s", msg.Path)
 		return m, m.loadPolicies()
 
-	case policySaveErrorMsg:
-		m.policyEditor.errorMsg = msg.err
+	case policyview.SaveErrorMsg:
+		m.policyEditor.ErrorMsg = msg.Err
 
-	case policyDeletedMsg:
+	case policyview.DeletedMsg:
 		m.currentView = ViewPolicyManage
-		m.statusMsg = fmt.Sprintf("Deleted policy: %s", msg.name)
+		m.statusMsg = fmt.Sprintf("Deleted policy: %s", msg.Name)
 		m.confirmDelete = false
 		return m, m.loadPolicies()
+
+	case policyview.DeleteErrorMsg:
+		m.statusMsg = fmt.Sprintf("Error deleting policy: %s", msg.Err)
+		m.confirmDelete = false
 
 	case uninstallDoneMsg:
 		fmt.Println("\nautoscan has been uninstalled.")
@@ -252,94 +257,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.selectedPolicy < len(m.policies)-1 {
-			m.selectedPolicy++
-			m.executor = nil
-			m.inputError = ""
-		}
-	case "k", "up":
-		if m.selectedPolicy > 0 {
-			m.selectedPolicy--
-			m.executor = nil
-			m.inputError = ""
-		}
-	case "enter":
-		if len(m.policies) > 0 {
-			if m.selectedPolicy < len(m.policies) {
-				p := m.policies[m.selectedPolicy]
-				if p != nil {
-					isMulti := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
-					if isMulti {
-						if len(p.Run.MultiProcess.Executables) == 0 {
-							m.inputError = "Multi-process policy needs at least one executable"
-							return m, nil
-						}
-						for _, proc := range p.Run.MultiProcess.Executables {
-							if strings.TrimSpace(proc.SourceFile) == "" {
-								m.inputError = "Multi-process policy has a missing source file"
-								return m, nil
-							}
-						}
-					} else if strings.TrimSpace(p.Compile.SourceFile) == "" {
-						m.inputError = "Single-process policy requires source_file"
-						return m, nil
-					}
-				}
-			}
-			m.inputError = ""
-			m.currentView = ViewDirectoryInput
-			m.folderBrowser.Reset(m.root)
-			return m, nil
-		}
-	case "q", "esc":
-		m.inputError = ""
+	oldSelected := m.selectedPolicy
+	result := policyview.SelectUpdate(policyview.SelectState{
+		Policies:       m.policies,
+		SelectedPolicy: m.selectedPolicy,
+		InputError:     m.inputError,
+	}, msg)
+
+	m.selectedPolicy = result.SelectedPolicy
+	m.inputError = result.InputError
+	if result.SelectedPolicy != oldSelected {
+		m.executor = nil
+	}
+	if result.GoBack {
 		m.currentView = ViewHome
+	}
+	if result.GoToDirectory {
+		m.currentView = ViewDirectoryInput
+		m.folderBrowser.Reset(m.root)
 	}
 	return m, nil
 }
 
 func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	maxCursor := len(m.policies)
+	result := policyview.ManageUpdate(policyview.ManageState{
+		Policies:           m.policies,
+		PolicyManageCursor: m.policyManageCursor,
+		ConfirmDelete:      m.confirmDelete,
+	}, msg)
 
-	switch msg.String() {
-	case "j", "down":
-		if m.policyManageCursor < maxCursor {
-			m.policyManageCursor++
+	m.policyManageCursor = result.PolicyManageCursor
+	m.confirmDelete = result.ConfirmDelete
+
+	switch result.Navigation {
+	case policyview.ManageNavBack:
+		m.currentView = ViewHome
+	case policyview.ManageNavBannedEditor:
+		return m, m.loadBannedList()
+	case policyview.ManageNavNewPolicy:
+		return m, m.openPolicyEditor(nil)
+	case policyview.ManageNavEditPolicy:
+		if result.PolicyToEdit != nil {
+			return m, m.openPolicyEditor(result.PolicyToEdit)
 		}
-	case "k", "up":
-		if m.policyManageCursor > -1 {
-			m.policyManageCursor--
-		}
-	case "enter":
-		if m.policyManageCursor == -1 {
-			return m, m.loadBannedList()
-		} else if m.policyManageCursor == 0 {
-			return m, m.openPolicyEditor(nil)
-		} else {
-			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
-		}
-	case "e":
-		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
-		}
-	case "d":
-		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			m.confirmDelete = true
-		}
-	case "y":
-		if m.confirmDelete && m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			return m, DeletePolicy(m.policies[m.policyManageCursor-1])
-		}
-	case "n":
-		m.confirmDelete = false
-	case "q", "esc":
-		if m.confirmDelete {
-			m.confirmDelete = false
-		} else {
-			m.currentView = ViewHome
-		}
+	}
+	if result.PolicyToDelete != nil {
+		return m, policyview.DeletePolicy(result.PolicyToDelete)
 	}
 	return m, nil
 }
@@ -347,7 +310,7 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" && !m.policyEditor.InSubMode() {
 		m.currentView = ViewPolicyManage
-		m.policyEditor.errorMsg = ""
+		m.policyEditor.ErrorMsg = ""
 		return m, nil
 	}
 

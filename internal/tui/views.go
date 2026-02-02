@@ -13,6 +13,7 @@ import (
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/styles"
 	"github.com/feli05/autoscan/internal/tui/views/home"
+	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
 )
 
@@ -45,9 +46,19 @@ func (m Model) View() string {
 			HelpPanelView: m.helpPanel.View(),
 		})
 	case ViewPolicySelect:
-		content = m.renderPolicySelect()
+		content = policyview.SelectView(policyview.SelectState{
+			Policies:       m.policies,
+			SelectedPolicy: m.selectedPolicy,
+			InputError:     m.inputError,
+			Width:          m.width,
+		})
 	case ViewPolicyManage:
-		content = m.renderPolicyManage()
+		content = policyview.ManageView(policyview.ManageState{
+			Policies:           m.policies,
+			PolicyManageCursor: m.policyManageCursor,
+			ConfirmDelete:      m.confirmDelete,
+			Width:              m.width,
+		})
 	case ViewPolicyEditor:
 		// Only add help bar if NOT in a sub-mode (sub-modes render their own hints)
 		if m.policyEditor.InSubMode() {
@@ -108,231 +119,6 @@ func (m Model) View() string {
 		lipgloss.Top,
 		content,
 	)
-}
-
-func (m Model) renderPolicySelect() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Select a Policy"))
-	b.WriteString("\n\n")
-
-	boxWidth := components.BoxWidth(m.width, 8, 60)
-
-	if len(m.policies) == 0 {
-		box := styles.WarningBoxStyle(boxWidth)
-		content := styles.WarningText.Render("No policies found!") + "\n\n" +
-			styles.SubtleText.Render("Create a policy via Manage Policies or edit ~/.config/autoscan/")
-		b.WriteString(box.Render(content))
-	} else {
-		box := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Primary).
-			Padding(1, 2).
-			Width(boxWidth)
-
-		var list strings.Builder
-
-		list.WriteString(styles.SubtleText.Render(fmt.Sprintf("Available policies: %d", len(m.policies))))
-		list.WriteString("\n\n")
-
-		for i, p := range m.policies {
-			list.WriteString(components.RenderMenuItem(p.Name, i == m.selectedPolicy))
-			list.WriteString("\n")
-		}
-
-		b.WriteString(box.Render(list.String()))
-
-		if m.selectedPolicy < len(m.policies) {
-			b.WriteString("\n\n")
-
-			detailBox := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(styles.Muted).
-				Padding(1, 2).
-				Width(boxWidth)
-
-			var details strings.Builder
-			p := m.policies[m.selectedPolicy]
-
-			details.WriteString(styles.Highlight.Render("Policy Details"))
-			details.WriteString("\n\n")
-
-			details.WriteString(styles.SubtleText.Render("  Name:     "))
-			details.WriteString(p.Name)
-			details.WriteString("\n")
-
-			relPath, _ := filepath.Rel(".", p.FilePath)
-			details.WriteString(styles.SubtleText.Render("  File:     "))
-			details.WriteString(filepath.Base(relPath))
-			details.WriteString("\n")
-
-			isMultiProcess := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
-			details.WriteString(styles.SubtleText.Render("  Mode:     "))
-			if isMultiProcess {
-				details.WriteString(styles.SuccessText.Render("Multi-Process"))
-			} else {
-				details.WriteString("Single Process")
-			}
-			details.WriteString("\n")
-
-			details.WriteString(styles.SubtleText.Render("  Flags:    "))
-			if len(p.Compile.Flags) > 0 {
-				details.WriteString(strings.Join(p.Compile.Flags, " "))
-			} else {
-				details.WriteString(styles.SubtleText.Render("(default)"))
-			}
-			details.WriteString("\n")
-
-			if len(p.LibraryFiles) > 0 {
-				details.WriteString(styles.SubtleText.Render("  Libraries:"))
-				details.WriteString(strings.Join(p.LibraryFiles, ", "))
-				details.WriteString("\n")
-			}
-
-			details.WriteString("\n")
-
-			if isMultiProcess {
-				mp := p.Run.MultiProcess
-				details.WriteString(styles.PrimaryText.Render("  Executables"))
-				details.WriteString("\n")
-				for _, proc := range mp.Executables {
-					details.WriteString(fmt.Sprintf("    • %s ", proc.Name))
-					details.WriteString(styles.SubtleText.Render(fmt.Sprintf("(%s)", proc.SourceFile)))
-					if proc.StartDelayMs > 0 {
-						details.WriteString(styles.SubtleText.Render(fmt.Sprintf(" +%dms", proc.StartDelayMs)))
-					}
-					details.WriteString("\n")
-				}
-
-				if len(mp.TestScenarios) > 0 {
-					details.WriteString("\n")
-					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Scenarios (%d)", len(mp.TestScenarios))))
-					details.WriteString("\n")
-					for i, scenario := range mp.TestScenarios {
-						if i >= 3 {
-							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(mp.TestScenarios)-3)))
-							details.WriteString("\n")
-							break
-						}
-						details.WriteString(fmt.Sprintf("    • %s\n", scenario.Name))
-					}
-				}
-			} else {
-				if p.Compile.SourceFile != "" {
-					details.WriteString(styles.SubtleText.Render("  Source:   "))
-					details.WriteString(p.Compile.SourceFile)
-					details.WriteString("\n")
-				}
-
-				if len(p.Run.TestCases) > 0 {
-					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Cases (%d)", len(p.Run.TestCases))))
-					details.WriteString("\n")
-					for i, tc := range p.Run.TestCases {
-						if i >= 3 {
-							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(p.Run.TestCases)-3)))
-							details.WriteString("\n")
-							break
-						}
-						details.WriteString(fmt.Sprintf("    • %s\n", tc.Name))
-					}
-				} else {
-					details.WriteString(styles.SubtleText.Render("  No test cases defined"))
-					details.WriteString("\n")
-				}
-			}
-
-			b.WriteString(detailBox.Render(details.String()))
-		}
-	}
-
-	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{Key: "↑/↓", Desc: "navigate"},
-		{Key: "enter", Desc: "select"},
-		{Key: "esc", Desc: "back"},
-	}))
-
-	if m.inputError != "" {
-		b.WriteString("\n")
-		b.WriteString(styles.ErrorText.Render("  " + m.inputError))
-	}
-
-	return b.String()
-}
-
-func (m Model) renderPolicyManage() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Manage Policies"))
-	b.WriteString("\n\n")
-
-	boxWidth := components.BoxWidth(m.width, 8, 60)
-
-	configBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(1, 2).
-		Width(boxWidth)
-
-	var configSection strings.Builder
-	configSection.WriteString(styles.SubtleText.Render("Configuration"))
-	configSection.WriteString("\n\n")
-
-	configSection.WriteString(components.RenderMenuItem("Edit Banned Functions", m.policyManageCursor == -1))
-	configSection.WriteString("\n")
-	configSection.WriteString(styles.SubtleText.Render("    Global list of prohibited function calls"))
-
-	b.WriteString(configBox.Render(configSection.String()))
-	b.WriteString("\n\n")
-
-	policyBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Primary).
-		Padding(1, 2).
-		Width(boxWidth)
-
-	var policySection strings.Builder
-	policySection.WriteString(styles.PrimaryText.Render(fmt.Sprintf("Policies (%d)", len(m.policies))))
-	policySection.WriteString("\n\n")
-
-	policySection.WriteString(components.RenderMenuItem("+ Create New Policy", m.policyManageCursor == 0))
-	policySection.WriteString("\n")
-
-	if len(m.policies) > 0 {
-		policySection.WriteString("\n")
-	}
-
-	for i, p := range m.policies {
-		policySection.WriteString(components.RenderMenuItem(p.Name, m.policyManageCursor == i+1))
-		policySection.WriteString("\n")
-	}
-
-	if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-		p := m.policies[m.policyManageCursor-1]
-		policySection.WriteString("\n")
-		policySection.WriteString(styles.SubtleText.Render(fmt.Sprintf("  File: %s", filepath.Base(p.FilePath))))
-		if len(p.Compile.Flags) > 0 {
-			policySection.WriteString("\n")
-			policySection.WriteString(styles.SubtleText.Render(fmt.Sprintf("  Flags: %s", strings.Join(p.Compile.Flags, " "))))
-		}
-	}
-
-	if m.confirmDelete && m.policyManageCursor > 0 {
-		policySection.WriteString("\n")
-		policySection.WriteString(components.ConfirmDialog("Delete this policy?"))
-	}
-
-	b.WriteString(policyBox.Render(policySection.String()))
-
-	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{Key: "↑/↓", Desc: "navigate"},
-		{Key: "enter", Desc: "select"},
-		{Key: "d", Desc: "delete"},
-		{Key: "esc", Desc: "back"},
-	}))
-
-	return b.String()
 }
 
 func (m Model) renderDirectoryInput() string {

@@ -1,4 +1,4 @@
-package tui
+package policy
 
 import (
 	"fmt"
@@ -16,10 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type PolicyEditorField int
+type EditorField int
 
 const (
-	FieldName PolicyEditorField = iota
+	FieldName EditorField = iota
 	FieldFlags
 	FieldLibraryFiles
 	FieldTestFiles
@@ -32,7 +32,7 @@ const (
 	FieldCancel
 )
 
-type PolicyEditor struct {
+type Editor struct {
 	isNew    bool
 	filePath string
 	width    int
@@ -109,11 +109,11 @@ type PolicyEditor struct {
 		focusedIdx      int
 	}
 
-	focusedField PolicyEditorField
-	errorMsg     string
+	focusedField EditorField
+	ErrorMsg     string
 }
 
-func NewPolicyEditor(width, height int) PolicyEditor {
+func NewEditor(width, height int) Editor {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "Lab 01 - Introduction"
 	nameInput.CharLimit = 100
@@ -178,7 +178,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	scenarioNameInput.CharLimit = 50
 	scenarioNameInput.Width = 40
 
-	pe := PolicyEditor{
+	pe := Editor{
 		isNew:             true,
 		nameInput:         nameInput,
 		flagsInput:        flagsInput,
@@ -211,7 +211,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	return pe
 }
 
-func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
+func (e *Editor) LoadPolicy(p *policy.Policy) {
 	e.isNew = false
 	e.filePath = p.FilePath
 
@@ -246,15 +246,15 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.testScenariosCursor = 0
 }
 
-func (e *PolicyEditor) SetWidth(w int) {
+func (e *Editor) SetWidth(w int) {
 	e.width = w
 }
 
-func (e *PolicyEditor) Reset() {
+func (e *Editor) Reset() {
 	e.isNew = true
 	e.filePath = ""
 	e.focusedField = FieldName
-	e.errorMsg = ""
+	e.ErrorMsg = ""
 	e.browsingForLibs = false
 	e.showingExistingLibs = false
 	e.existingLibs = nil
@@ -298,7 +298,7 @@ func (e *PolicyEditor) Reset() {
 	e.resetScenarioInputs()
 }
 
-func (e *PolicyEditor) resetTestCaseInputs() {
+func (e *Editor) resetTestCaseInputs() {
 	e.testCaseInputs.name.SetValue("")
 	e.testCaseInputs.args.SetValue("")
 	e.testCaseInputs.input.SetValue("")
@@ -311,7 +311,7 @@ func (e *PolicyEditor) resetTestCaseInputs() {
 	e.testCaseInputs.expectedExit.Blur()
 }
 
-func (e *PolicyEditor) resetProcessInputs() {
+func (e *Editor) resetProcessInputs() {
 	e.processInputs.name.SetValue("")
 	e.processInputs.sourceFile.SetValue("")
 	e.processInputs.args.SetValue("")
@@ -321,10 +321,10 @@ func (e *PolicyEditor) resetProcessInputs() {
 	e.processInputs.sourceFile.Blur()
 	e.processInputs.args.Blur()
 	e.processInputs.delayMs.Blur()
-	e.errorMsg = ""
+	e.ErrorMsg = ""
 }
 
-func (e *PolicyEditor) resetScenarioInputs() {
+func (e *Editor) resetScenarioInputs() {
 	e.scenarioInputs.name.SetValue("")
 	e.scenarioInputs.name.Focus()
 	e.scenarioInputs.focusedIdx = 0
@@ -335,7 +335,7 @@ func (e *PolicyEditor) resetScenarioInputs() {
 	e.scenarioExpectedOutputProcess = ""
 }
 
-func (e *PolicyEditor) initScenarioProcessInputs() {
+func (e *Editor) initScenarioProcessInputs() {
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
 	e.scenarioInputs.processExit = make(map[string]textinput.Model)
@@ -364,7 +364,7 @@ func (e *PolicyEditor) initScenarioProcessInputs() {
 	}
 }
 
-func (e *PolicyEditor) blurAllScenarioInputs() {
+func (e *Editor) blurAllScenarioInputs() {
 	e.scenarioInputs.name.Blur()
 	for name := range e.scenarioInputs.processArgs {
 		input := e.scenarioInputs.processArgs[name]
@@ -383,7 +383,7 @@ func (e *PolicyEditor) blurAllScenarioInputs() {
 	}
 }
 
-func (e *PolicyEditor) focusCurrentScenarioInput() {
+func (e *Editor) focusCurrentScenarioInput() {
 	numProcesses := len(e.multiProcessExecs)
 	totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
 
@@ -418,7 +418,7 @@ func (e *PolicyEditor) focusCurrentScenarioInput() {
 	}
 }
 
-func (e *PolicyEditor) loadExistingTestFiles() {
+func (e *Editor) loadExistingTestFiles() {
 	e.existingTests = nil
 	testDir, err := config.TestFilesDir()
 	if err != nil {
@@ -448,7 +448,7 @@ func (e *PolicyEditor) loadExistingTestFiles() {
 	}
 }
 
-func (e *PolicyEditor) loadExistingExpectedOutputs() {
+func (e *Editor) loadExistingExpectedOutputs() {
 	e.existingExpectedOutputs = nil
 	expDir, err := config.ExpectedOutputsDir()
 	if err != nil {
@@ -468,7 +468,7 @@ func (e *PolicyEditor) loadExistingExpectedOutputs() {
 	}
 }
 
-func (e *PolicyEditor) copyToExpectedOutputs(selectedPath string) (string, bool) {
+func (e *Editor) copyToExpectedOutputs(selectedPath string) (string, bool) {
 	filename := filepath.Base(selectedPath)
 	expDir, err := config.EnsureExpectedOutputsDir()
 	if err != nil {
@@ -485,7 +485,7 @@ func (e *PolicyEditor) copyToExpectedOutputs(selectedPath string) (string, bool)
 	return filename, true
 }
 
-func (e *PolicyEditor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *int, set func(string), close func()) {
+func (e *Editor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *int, set func(string), close func()) {
 	switch msg.String() {
 	case "esc":
 		close()
@@ -505,7 +505,7 @@ func (e *PolicyEditor) handleExistingPicker(msg tea.KeyMsg, items []string, curs
 	}
 }
 
-func (e *PolicyEditor) renderBrowsePicker(title, subtitle string, useBox bool) string {
+func (e *Editor) renderBrowsePicker(title, subtitle string, useBox bool) string {
 	var b strings.Builder
 	b.WriteString(styles.HeaderStyle.Render(title))
 	b.WriteString("\n\n")
@@ -532,7 +532,7 @@ func (e *PolicyEditor) renderBrowsePicker(title, subtitle string, useBox bool) s
 	return b.String()
 }
 
-func (e *PolicyEditor) renderInputRow(label string, focused bool, input textinput.Model, hint string) string {
+func (e *Editor) renderInputRow(label string, focused bool, input textinput.Model, hint string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
@@ -545,7 +545,7 @@ func (e *PolicyEditor) renderInputRow(label string, focused bool, input textinpu
 	return b.String()
 }
 
-func (e *PolicyEditor) renderValueRow(label string, focused bool, value, empty string) string {
+func (e *Editor) renderValueRow(label string, focused bool, value, empty string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
@@ -558,7 +558,7 @@ func (e *PolicyEditor) renderValueRow(label string, focused bool, value, empty s
 	return b.String()
 }
 
-func (e *PolicyEditor) renderInputRowTight(label string, focused bool, input textinput.Model) string {
+func (e *Editor) renderInputRowTight(label string, focused bool, input textinput.Model) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
@@ -567,7 +567,7 @@ func (e *PolicyEditor) renderInputRowTight(label string, focused bool, input tex
 	return b.String()
 }
 
-func (e *PolicyEditor) renderValueRowTight(label string, focused bool, value, empty string) string {
+func (e *Editor) renderValueRowTight(label string, focused bool, value, empty string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
@@ -580,7 +580,7 @@ func (e *PolicyEditor) renderValueRowTight(label string, focused bool, value, em
 	return b.String()
 }
 
-func (e *PolicyEditor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
+func (e *Editor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
 	var b strings.Builder
 	b.WriteString(styles.HeaderStyle.Render(title))
 	b.WriteString("\n\n")
@@ -618,7 +618,7 @@ func (e *PolicyEditor) renderExistingPicker(title, subtitle, emptyMsg string, it
 	return b.String()
 }
 
-func (e *PolicyEditor) loadExistingLibraries() {
+func (e *Editor) loadExistingLibraries() {
 	e.existingLibs = nil
 	libDir, err := config.LibrariesDir()
 	if err != nil {
@@ -650,7 +650,7 @@ func (e *PolicyEditor) loadExistingLibraries() {
 	}
 }
 
-func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
+func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	// ─── SUB-MODE: Existing libraries picker ───
 	if e.showingExistingLibs {
 		switch msg := msg.(type) {
@@ -1542,7 +1542,7 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (e *PolicyEditor) nextField() {
+func (e *Editor) nextField() {
 	e.blurAll()
 	e.focusedField++
 	e.focusedField = e.adjustFieldForMode(e.focusedField, true)
@@ -1552,7 +1552,7 @@ func (e *PolicyEditor) nextField() {
 	e.focusCurrent()
 }
 
-func (e *PolicyEditor) prevField() {
+func (e *Editor) prevField() {
 	e.blurAll()
 	if e.focusedField == FieldName {
 		e.focusedField = FieldCancel
@@ -1563,8 +1563,7 @@ func (e *PolicyEditor) prevField() {
 	e.focusCurrent()
 }
 
-// adjustFieldForMode skips fields that don't apply to current mode (single vs multi-process)
-func (e *PolicyEditor) adjustFieldForMode(field PolicyEditorField, forward bool) PolicyEditorField {
+func (e *Editor) adjustFieldForMode(field EditorField, forward bool) EditorField {
 	if e.multiProcessEnabled {
 		if field == FieldSourceFile || field == FieldTestCases {
 			if forward {
@@ -1583,13 +1582,13 @@ func (e *PolicyEditor) adjustFieldForMode(field PolicyEditorField, forward bool)
 	return field
 }
 
-func (e *PolicyEditor) blurAll() {
+func (e *Editor) blurAll() {
 	e.nameInput.Blur()
 	e.flagsInput.Blur()
 	e.sourceFileInput.Blur()
 }
 
-func (e *PolicyEditor) focusCurrent() {
+func (e *Editor) focusCurrent() {
 	switch e.focusedField {
 	case FieldName:
 		e.nameInput.Focus()
@@ -1600,11 +1599,11 @@ func (e *PolicyEditor) focusCurrent() {
 	}
 }
 
-func (e *PolicyEditor) save() tea.Cmd {
+func (e *Editor) save() tea.Cmd {
 	return func() tea.Msg {
 		name := strings.TrimSpace(e.nameInput.Value())
 		if name == "" {
-			return policySaveErrorMsg{err: "Policy name is required"}
+			return SaveErrorMsg{Err: "Policy name is required"}
 		}
 
 		flagsStr := strings.TrimSpace(e.flagsInput.Value())
@@ -1727,7 +1726,7 @@ func (e *PolicyEditor) save() tea.Cmd {
 
 		data, err := yaml.Marshal(p)
 		if err != nil {
-			return policySaveErrorMsg{err: fmt.Sprintf("Failed to create YAML: %v", err)}
+			return SaveErrorMsg{Err: fmt.Sprintf("Failed to create YAML: %v", err)}
 		}
 
 		var filePath string
@@ -1739,11 +1738,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 
 			policiesDir, err := config.PoliciesDir()
 			if err != nil {
-				return policySaveErrorMsg{err: fmt.Sprintf("Failed to get config dir: %v", err)}
+				return SaveErrorMsg{Err: fmt.Sprintf("Failed to get config dir: %v", err)}
 			}
 
 			if err := os.MkdirAll(policiesDir, 0755); err != nil {
-				return policySaveErrorMsg{err: fmt.Sprintf("Failed to create directory: %v", err)}
+				return SaveErrorMsg{Err: fmt.Sprintf("Failed to create directory: %v", err)}
 			}
 
 			filePath = filepath.Join(policiesDir, safeName+".yaml")
@@ -1752,14 +1751,14 @@ func (e *PolicyEditor) save() tea.Cmd {
 		}
 
 		if err := os.WriteFile(filePath, data, 0644); err != nil {
-			return policySaveErrorMsg{err: fmt.Sprintf("Failed to save: %v", err)}
+			return SaveErrorMsg{Err: fmt.Sprintf("Failed to save: %v", err)}
 		}
 
-		return policySavedMsg{path: filePath, isNew: e.isNew}
+		return SavedMsg{Path: filePath, IsNew: e.isNew}
 	}
 }
 
-func (e *PolicyEditor) View() string {
+func (e *Editor) View() string {
 	if e.editingProcess {
 		var b strings.Builder
 		if e.editingProcessIdx >= 0 {
@@ -1807,8 +1806,8 @@ func (e *PolicyEditor) View() string {
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
-		if e.errorMsg != "" {
-			b.WriteString(styles.ErrorStyle.Render("  Error: " + e.errorMsg))
+		if e.ErrorMsg != "" {
+			b.WriteString(styles.ErrorStyle.Render("  Error: " + e.ErrorMsg))
 			b.WriteString("\n")
 		}
 		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
@@ -2403,15 +2402,15 @@ func (e *PolicyEditor) View() string {
 
 	b.WriteString(buttons.String())
 
-	if e.errorMsg != "" {
+	if e.ErrorMsg != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.ErrorStyle.Render("  Error: " + e.errorMsg))
+		b.WriteString(styles.ErrorStyle.Render("  Error: " + e.ErrorMsg))
 	}
 
 	return b.String()
 }
 
-func (e *PolicyEditor) InSubMode() bool {
+func (e *Editor) InSubMode() bool {
 	return e.browsingForLibs || e.browsingForTests ||
 		e.showingExistingLibs || e.showingExistingTests ||
 		e.browsingForExpectedOutput || e.showingExistingExpectedOutput ||
@@ -2419,7 +2418,7 @@ func (e *PolicyEditor) InSubMode() bool {
 		e.editingTestCase || e.editingProcess || e.editingScenario
 }
 
-func (e *PolicyEditor) getScrollWindow(cursor, total, maxVisible int) (start, end int) {
+func (e *Editor) getScrollWindow(cursor, total, maxVisible int) (start, end int) {
 	if total <= maxVisible {
 		return 0, total
 	}
@@ -2437,7 +2436,7 @@ func (e *PolicyEditor) getScrollWindow(cursor, total, maxVisible int) (start, en
 	return start, end
 }
 
-func (e *PolicyEditor) renderListSection(title string, items []string, cursor int, focused bool, boxHeight int, editable bool) string {
+func (e *Editor) renderListSection(title string, items []string, cursor int, focused bool, boxHeight int, editable bool) string {
 	innerHeight := boxHeight - 2
 	maxItems := innerHeight - 1
 	if maxItems < 1 {
@@ -2475,7 +2474,7 @@ func (e *PolicyEditor) renderListSection(title string, items []string, cursor in
 	return content.String()
 }
 
-func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEditorField) string {
+func (e *Editor) renderFieldCompact(label, input string, field EditorField) string {
 	var b strings.Builder
 
 	if e.focusedField == field {
@@ -2489,23 +2488,27 @@ func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEdito
 }
 
 type (
-	policySavedMsg struct {
-		path  string
-		isNew bool
+	SavedMsg struct {
+		Path  string
+		IsNew bool
 	}
-	policySaveErrorMsg struct {
-		err string
+	SaveErrorMsg struct {
+		Err string
 	}
-	policyDeletedMsg struct {
-		name string
+	DeletedMsg struct {
+		Name string
 	}
 )
 
 func DeletePolicy(p *policy.Policy) tea.Cmd {
 	return func() tea.Msg {
 		if err := os.Remove(p.FilePath); err != nil {
-			return errorMsg(err)
+			return DeleteErrorMsg{Err: err}
 		}
-		return policyDeletedMsg{name: p.Name}
+		return DeletedMsg{Name: p.Name}
 	}
+}
+
+type DeleteErrorMsg struct {
+	Err error
 }
