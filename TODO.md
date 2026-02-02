@@ -5,7 +5,7 @@
 - [ ] **TUI view refactor** (in progress)
   - [x] Create `views/settings/` subpackage
   - [x] Create `views/home/` subpackage
-  - [ ] Create `views/policyselect/` subpackage
+  - [ ] Create `views/policy/` subpackage (select.go, manage.go, editor.go (existing policy_editor.go))
   - [ ] Create `views/policymanage/` subpackage
   - [ ] Create `views/submissions/` subpackage (largest)
   - [ ] Create `views/details/` subpackage
