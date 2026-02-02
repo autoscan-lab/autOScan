@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -13,24 +12,38 @@ import (
 	"github.com/feli05/autoscan/internal/export"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/tui/views/home"
+	"github.com/feli05/autoscan/internal/tui/views/settings"
 )
-
-const logo = `
- █████╗ ██╗   ██╗████████╗ ██████╗ ███████╗ ██████╗ █████╗ ███╗   ██╗
-██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔════╝██╔════╝██╔══██╗████╗  ██║
-███████║██║   ██║   ██║   ██║   ██║███████╗██║     ███████║██╔██╗ ██║
-██╔══██║██║   ██║   ██║   ██║   ██║╚════██║██║     ██╔══██║██║╚██╗██║
-██║  ██║╚██████╔╝   ██║   ╚██████╔╝███████║╚██████╗██║  ██║██║ ╚████║
-╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝`
-
-const tagline = "OS Lab Submission Grader"
 
 func (m Model) View() string {
 	var content string
 
 	switch m.currentView {
 	case ViewHome:
-		content = m.renderHome()
+		contentWidth := m.width - 4
+		if contentWidth < 80 {
+			contentWidth = 80
+		}
+		menuWidth := contentWidth * 55 / 100
+		if menuWidth < 45 {
+			menuWidth = 45
+		}
+		helpPanelWidth := contentWidth - menuWidth - 4
+		if helpPanelWidth < 30 {
+			helpPanelWidth = 30
+		}
+		m.helpPanel.SetWidth(helpPanelWidth)
+		m.helpPanel.SetPolicyCount(len(m.policies))
+
+		content = home.View(home.State{
+			Width:         m.width,
+			MenuItem:      int(m.menuItem),
+			ConfirmDelete: m.confirmDelete,
+			PolicyCount:   len(m.policies),
+			AnimationView: m.eyeAnimation.View(),
+			HelpPanelView: m.helpPanel.View(),
+		})
 	case ViewPolicySelect:
 		content = m.renderPolicySelect()
 	case ViewPolicyManage:
@@ -49,7 +62,11 @@ func (m Model) View() string {
 	case ViewBannedEditor:
 		content = m.renderBannedEditor()
 	case ViewSettings:
-		content = m.renderSettings()
+		content = settings.View(settings.State{
+			Settings:       &m.settings,
+			SettingsCursor: m.settingsCursor,
+			Width:          m.width,
+		})
 	case ViewDirectoryInput:
 		content = m.renderDirectoryInput()
 	case ViewSubmissions:
@@ -59,7 +76,29 @@ func (m Model) View() string {
 	case ViewExport:
 		content = m.renderExport()
 	default:
-		content = m.renderHome()
+		contentWidth := m.width - 4
+		if contentWidth < 80 {
+			contentWidth = 80
+		}
+		menuWidth := contentWidth * 55 / 100
+		if menuWidth < 45 {
+			menuWidth = 45
+		}
+		helpPanelWidth := contentWidth - menuWidth - 4
+		if helpPanelWidth < 30 {
+			helpPanelWidth = 30
+		}
+		m.helpPanel.SetWidth(helpPanelWidth)
+		m.helpPanel.SetPolicyCount(len(m.policies))
+
+		content = home.View(home.State{
+			Width:         m.width,
+			MenuItem:      int(m.menuItem),
+			ConfirmDelete: m.confirmDelete,
+			PolicyCount:   len(m.policies),
+			AnimationView: m.eyeAnimation.View(),
+			HelpPanelView: m.helpPanel.View(),
+		})
 	}
 
 	return lipgloss.Place(
@@ -69,92 +108,6 @@ func (m Model) View() string {
 		lipgloss.Top,
 		content,
 	)
-}
-
-func (m Model) renderHome() string {
-	var b strings.Builder
-
-	contentWidth := m.width - 4
-	if contentWidth < 80 {
-		contentWidth = 80
-	}
-	menuWidth := contentWidth * 55 / 100 // 55% for menu
-	if menuWidth < 45 {
-		menuWidth = 45
-	}
-	helpPanelWidth := contentWidth - menuWidth - 4
-	if helpPanelWidth < 30 {
-		helpPanelWidth = 30
-	}
-
-	logoStyled := styles.LogoStyle.Render(logo)
-	taglineStyled := styles.SubtleText.Render("     " + tagline)
-	animation := m.eyeAnimation.View()
-	animationBox := lipgloss.NewStyle().
-		Width(20).
-		Align(lipgloss.Center).
-		Render(animation)
-	logoWithTagline := logoStyled + "\n" + taglineStyled
-
-	topSection := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		logoWithTagline,
-		lipgloss.NewStyle().PaddingLeft(4).Render(animationBox),
-	)
-
-	b.WriteString(topSection)
-	b.WriteString("\n\n")
-
-	menuBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Primary).
-		Padding(1, 3).
-		Width(menuWidth)
-
-	var menu strings.Builder
-	menuItems := []struct {
-		key  string
-		desc string
-		item MenuItem
-	}{
-		{"1", "Run Grader", MenuRunGrader},
-		{"2", "Manage Policies", MenuManagePolicies},
-		{"3", "Settings", MenuSettings},
-		{"4", "Uninstall", MenuUninstall},
-		{"q", "Quit", MenuQuit},
-	}
-
-	for _, mi := range menuItems {
-		cursor := "  "
-		style := styles.NormalItem
-		if mi.item == m.menuItem {
-			cursor = "▸ "
-			style = styles.SelectedItem
-		}
-		keyStyle := styles.HelpKey.Render(fmt.Sprintf("[%s]", mi.key))
-		menu.WriteString(fmt.Sprintf("%s%s %s\n", cursor, keyStyle, style.Render(mi.desc)))
-	}
-
-	if m.confirmDelete && m.menuItem == MenuUninstall {
-		menu.WriteString("\n")
-		menu.WriteString(components.ConfirmDialog("Remove autoscan and all configs?"))
-	}
-
-	menuRendered := menuBox.Render(menu.String())
-	m.helpPanel.SetWidth(helpPanelWidth)
-	m.helpPanel.SetPolicyCount(len(m.policies))
-	helpRendered := m.helpPanel.View()
-	bottomSection := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		menuRendered,
-		lipgloss.NewStyle().MarginLeft(2).Render(helpRendered),
-	)
-
-	b.WriteString(bottomSection)
-	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  Use ↑/↓ to navigate, Enter to select"))
-
-	return b.String()
 }
 
 func (m Model) renderPolicySelect() string {
@@ -378,109 +331,6 @@ func (m Model) renderPolicyManage() string {
 		{Key: "d", Desc: "delete"},
 		{Key: "esc", Desc: "back"},
 	}))
-
-	return b.String()
-}
-
-func (m Model) renderSettings() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Settings"))
-	b.WriteString("\n\n")
-
-	boxWidth := components.BoxWidth(m.width, 4, 80)
-	box := styles.BoxStyle(boxWidth)
-
-	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Display Options"))
-	content.WriteString("\n\n")
-
-	toggle1 := components.Toggle{
-		Label:       "Short Names",
-		Description: "Truncate folder names at first underscore",
-		Value:       m.settings.ShortNames,
-		Focused:     m.settingsCursor == 0,
-	}
-	content.WriteString(toggle1.View())
-	content.WriteString("\n\n")
-
-	toggle2 := components.Toggle{
-		Label:       "Keep Binaries",
-		Description: "Keep compiled binaries after grading",
-		Value:       m.settings.KeepBinaries,
-		Focused:     m.settingsCursor == 1,
-	}
-	content.WriteString(toggle2.View())
-	content.WriteString("\n\n")
-
-	workersLabel := "Max Workers"
-	cpuCount := runtime.NumCPU()
-	var workersValue string
-	if m.settings.MaxWorkers == 0 {
-		workersValue = fmt.Sprintf("All CPUs (%d)", cpuCount)
-	} else {
-		workersValue = fmt.Sprintf("%d (of %d CPUs)", m.settings.MaxWorkers, cpuCount)
-	}
-	if m.settingsCursor == 2 {
-		content.WriteString(styles.SelectedItem.Render(fmt.Sprintf("  %s: %s", workersLabel, workersValue)))
-	} else {
-		content.WriteString(styles.NormalItem.Render(fmt.Sprintf("  %s: %s", workersLabel, workersValue)))
-	}
-	content.WriteString("\n")
-	desc1 := fmt.Sprintf("      Concurrent compilation processes")
-	desc2 := fmt.Sprintf("      (0 = all %d CPUs, 2-4 for limited resources)", cpuCount)
-	content.WriteString(styles.SubtleText.Render(desc1))
-	content.WriteString("\n")
-	content.WriteString(styles.SubtleText.Render(desc2))
-
-	content.WriteString("\n\n")
-	content.WriteString(styles.SubtleText.Render("Plagiarism Detection"))
-	content.WriteString("\n\n")
-
-	windowLine := fmt.Sprintf("  Window Size: %d", m.settings.PlagiarismWindowSize)
-	if m.settingsCursor == 3 {
-		content.WriteString(styles.SelectedItem.Render(windowLine))
-	} else {
-		content.WriteString(styles.NormalItem.Render(windowLine))
-	}
-	content.WriteString("\n")
-
-	minTokensLine := fmt.Sprintf("  Min Function Tokens: %d", m.settings.PlagiarismMinFuncTokens)
-	if m.settingsCursor == 4 {
-		content.WriteString(styles.SelectedItem.Render(minTokensLine))
-	} else {
-		content.WriteString(styles.NormalItem.Render(minTokensLine))
-	}
-	content.WriteString("\n")
-
-	thresholdLine := fmt.Sprintf("  Score Threshold: %.2f", m.settings.PlagiarismScoreThreshold)
-	if m.settingsCursor == 5 {
-		content.WriteString(styles.SelectedItem.Render(thresholdLine))
-	} else {
-		content.WriteString(styles.NormalItem.Render(thresholdLine))
-	}
-
-	b.WriteString(box.Render(content.String()))
-
-	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  Config: ~/.config/autoscan/settings.yaml"))
-
-	b.WriteString("\n\n")
-	helpItems := []components.HelpItem{
-		{"↑/↓", "navigate"},
-		{"space/enter", "toggle"},
-	}
-	if m.settingsCursor >= 2 {
-		resetLabel := "reset"
-		if m.settingsCursor == 2 {
-			resetLabel = "reset workers"
-		} else {
-			resetLabel = "reset default"
-		}
-		helpItems = append(helpItems, components.HelpItem{"+/-", "adjust"}, components.HelpItem{"0", resetLabel})
-	}
-	helpItems = append(helpItems, components.HelpItem{"esc", "back"})
-	b.WriteString(components.RenderHelpBar(helpItems))
 
 	return b.String()
 }

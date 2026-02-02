@@ -198,3 +198,28 @@ func ConfirmDialog(message string) string {
 
 	return b.String()
 }
+
+type NumberSetting struct {
+	Label       string
+	Value       string
+	Description []string
+	Focused     bool
+}
+
+func (ns NumberSetting) View() string {
+	var b strings.Builder
+
+	line := fmt.Sprintf("  %s: %s", ns.Label, ns.Value)
+	if ns.Focused {
+		b.WriteString(styles.SelectedItem.Render(line))
+	} else {
+		b.WriteString(styles.NormalItem.Render(line))
+	}
+
+	for _, desc := range ns.Description {
+		b.WriteString("\n")
+		b.WriteString(styles.SubtleText.Render("      " + desc))
+	}
+
+	return b.String()
+}

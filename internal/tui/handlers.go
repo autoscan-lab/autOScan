@@ -16,6 +16,8 @@ import (
 	"github.com/feli05/autoscan/internal/engine"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/views/home"
+	"github.com/feli05/autoscan/internal/tui/views/settings"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -29,7 +31,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.currentView {
 		case ViewHome:
-			return m.updateHome(msg)
+			result := home.Update(home.State{
+				Width:         m.width,
+				MenuItem:      int(m.menuItem),
+				ConfirmDelete: m.confirmDelete,
+				PolicyCount:   len(m.policies),
+			}, msg)
+			m.menuItem = MenuItem(result.MenuItem)
+			m.confirmDelete = result.ConfirmDelete
+			if result.ResetPolicyManageCursor {
+				m.policyManageCursor = 0
+			}
+			if result.ResetSettingsCursor {
+				m.settingsCursor = 0
+			}
+			switch result.Navigation {
+			case home.NavPolicySelect:
+				m.currentView = ViewPolicySelect
+			case home.NavPolicyManage:
+				m.currentView = ViewPolicyManage
+			case home.NavSettings:
+				m.currentView = ViewSettings
+			case home.NavQuit:
+				return m, tea.Quit
+			case home.NavUninstall:
+				return m, m.doUninstall()
+			}
+			return m, nil
 		case ViewPolicySelect:
 			return m.updatePolicySelect(msg)
 		case ViewPolicyManage:
@@ -39,7 +67,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewBannedEditor:
 			return m.updateBannedEditor(msg)
 		case ViewSettings:
-			return m.updateSettings(msg)
+			result := settings.Update(settings.State{
+				Settings:       &m.settings,
+				SettingsCursor: m.settingsCursor,
+				Width:          m.width,
+			}, msg)
+			m.settings = result.Settings
+			m.settingsCursor = result.SettingsCursor
+			if result.GoBack {
+				m.currentView = ViewHome
+			}
+			return m, nil
 		case ViewDirectoryInput:
 			return m.updateDirectoryInput(msg)
 		case ViewSubmissions:
@@ -213,57 +251,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.menuItem < MenuQuit {
-			m.menuItem++
-		}
-	case "k", "up":
-		if m.menuItem > MenuRunGrader {
-			m.menuItem--
-		}
-	case "enter":
-		switch m.menuItem {
-		case MenuRunGrader:
-			m.currentView = ViewPolicySelect
-		case MenuManagePolicies:
-			m.currentView = ViewPolicyManage
-			m.policyManageCursor = 0
-		case MenuSettings:
-			m.currentView = ViewSettings
-			m.settingsCursor = 0
-		case MenuUninstall:
-			m.confirmDelete = true
-		case MenuQuit:
-			return m, tea.Quit
-		}
-	case "y":
-		if m.confirmDelete && m.menuItem == MenuUninstall {
-			return m, m.doUninstall()
-		}
-	case "n", "esc":
-		m.confirmDelete = false
-	case "q":
-		if !m.confirmDelete {
-			return m, tea.Quit
-		}
-		m.confirmDelete = false
-	case "1":
-		m.currentView = ViewPolicySelect
-	case "2":
-		m.currentView = ViewPolicyManage
-		m.policyManageCursor = 0
-	case "3":
-		m.currentView = ViewSettings
-		m.settingsCursor = 0
-	case "4":
-		m.confirmDelete = true
-		m.menuItem = MenuUninstall
-	}
-	return m, nil
-}
-
 func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
@@ -366,99 +353,6 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	cmd := m.policyEditor.Update(msg)
 	return m, cmd
-}
-
-func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.settingsCursor < 5 {
-			m.settingsCursor++
-		}
-	case "k", "up":
-		if m.settingsCursor > 0 {
-			m.settingsCursor--
-		}
-	case "enter", " ":
-		switch m.settingsCursor {
-		case 0:
-			m.settings.ShortNames = !m.settings.ShortNames
-		case 1:
-			m.settings.KeepBinaries = !m.settings.KeepBinaries
-		default:
-			return m, nil
-		}
-		config.SaveSettings(m.settings)
-	case "+", "=":
-		switch m.settingsCursor {
-		case 2:
-			if m.settings.MaxWorkers < 32 {
-				m.settings.MaxWorkers++
-				config.SaveSettings(m.settings)
-			}
-		case 3:
-			if m.settings.PlagiarismWindowSize < 64 {
-				m.settings.PlagiarismWindowSize++
-				config.SaveSettings(m.settings)
-			}
-		case 4:
-			if m.settings.PlagiarismMinFuncTokens < 1024 {
-				m.settings.PlagiarismMinFuncTokens++
-				config.SaveSettings(m.settings)
-			}
-		case 5:
-			if m.settings.PlagiarismScoreThreshold < 1.0 {
-				m.settings.PlagiarismScoreThreshold += 0.05
-				if m.settings.PlagiarismScoreThreshold > 1.0 {
-					m.settings.PlagiarismScoreThreshold = 1.0
-				}
-				config.SaveSettings(m.settings)
-			}
-		}
-	case "-", "_":
-		switch m.settingsCursor {
-		case 2:
-			if m.settings.MaxWorkers > 0 {
-				m.settings.MaxWorkers--
-				config.SaveSettings(m.settings)
-			}
-		case 3:
-			if m.settings.PlagiarismWindowSize > 1 {
-				m.settings.PlagiarismWindowSize--
-				config.SaveSettings(m.settings)
-			}
-		case 4:
-			if m.settings.PlagiarismMinFuncTokens > 1 {
-				m.settings.PlagiarismMinFuncTokens--
-				config.SaveSettings(m.settings)
-			}
-		case 5:
-			if m.settings.PlagiarismScoreThreshold > 0.0 {
-				m.settings.PlagiarismScoreThreshold -= 0.05
-				if m.settings.PlagiarismScoreThreshold < 0.0 {
-					m.settings.PlagiarismScoreThreshold = 0.0
-				}
-				config.SaveSettings(m.settings)
-			}
-		}
-	case "0":
-		switch m.settingsCursor {
-		case 2:
-			m.settings.MaxWorkers = 0
-			config.SaveSettings(m.settings)
-		case 3:
-			m.settings.PlagiarismWindowSize = 6
-			config.SaveSettings(m.settings)
-		case 4:
-			m.settings.PlagiarismMinFuncTokens = 14
-			config.SaveSettings(m.settings)
-		case 5:
-			m.settings.PlagiarismScoreThreshold = 0.6
-			config.SaveSettings(m.settings)
-		}
-	case "q", "esc":
-		m.currentView = ViewHome
-	}
-	return m, nil
 }
 
 func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
