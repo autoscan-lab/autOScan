@@ -507,8 +507,7 @@ func (e *Editor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *in
 
 func (e *Editor) renderBrowsePicker(title, subtitle string, useBox bool) string {
 	var b strings.Builder
-	b.WriteString(styles.HeaderStyle.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader(title))
 
 	if useBox {
 		box := styles.BoxStyle(60)
@@ -582,8 +581,7 @@ func (e *Editor) renderValueRowTight(label string, focused bool, value, empty st
 
 func (e *Editor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
 	var b strings.Builder
-	b.WriteString(styles.HeaderStyle.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader(title))
 
 	box := styles.BoxStyle(boxWidth)
 	var content strings.Builder
@@ -1762,11 +1760,10 @@ func (e *Editor) View() string {
 	if e.editingProcess {
 		var b strings.Builder
 		if e.editingProcessIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Process"))
+			b.WriteString(components.RenderHeader("Edit Process"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Process"))
+			b.WriteString(components.RenderHeader("Add Process"))
 		}
-		b.WriteString("\n\n")
 
 		box := styles.BoxStyle(80)
 		var content strings.Builder
@@ -1835,11 +1832,10 @@ func (e *Editor) View() string {
 	if e.editingTestCase {
 		var b strings.Builder
 		if e.editingTestCaseIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Test Case"))
+			b.WriteString(components.RenderHeader("Edit Test Case"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Test Case"))
+			b.WriteString(components.RenderHeader("Add Test Case"))
 		}
-		b.WriteString("\n\n")
 
 		box := styles.BoxStyle(80)
 		var content strings.Builder
@@ -1912,11 +1908,10 @@ func (e *Editor) View() string {
 	if e.editingScenario {
 		var b strings.Builder
 		if e.editingScenarioIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Test Scenario"))
+			b.WriteString(components.RenderHeader("Edit Test Scenario"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Test Scenario"))
+			b.WriteString(components.RenderHeader("Add Test Scenario"))
 		}
-		b.WriteString("\n\n")
 
 		numProcesses := len(e.multiProcessExecs)
 		totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save

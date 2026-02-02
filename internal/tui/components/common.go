@@ -223,3 +223,8 @@ func (ns NumberSetting) View() string {
 
 	return b.String()
 }
+
+// RenderHeader renders a styled page header with trailing newlines.
+func RenderHeader(title string) string {
+	return styles.HeaderStyle.Render(title) + "\n\n"
+}

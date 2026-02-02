@@ -31,8 +31,7 @@ type UpdateResult struct {
 func View(s State) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Edit Banned Functions"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Edit Banned Functions"))
 
 	box := styles.BoxStyle(min(50, s.Width-4))
 

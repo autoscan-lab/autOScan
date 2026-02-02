@@ -29,8 +29,7 @@ type SelectUpdateResult struct {
 func SelectView(s SelectState) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Select a Policy"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Select a Policy"))
 
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
 

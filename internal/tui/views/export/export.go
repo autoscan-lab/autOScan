@@ -36,8 +36,7 @@ type ErrorMsg struct {
 func View(s State) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Export Results"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Export Results"))
 
 	boxWidth := s.Width - 8
 	if boxWidth < 60 {

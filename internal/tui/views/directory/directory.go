@@ -25,8 +25,7 @@ type UpdateResult struct {
 func View(s State) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Select Directory"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Select Directory"))
 
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
 	box := styles.BoxStyle(boxWidth)

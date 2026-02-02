@@ -20,8 +20,7 @@ type State struct {
 func View(s State) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Settings"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Settings"))
 
 	boxWidth := components.BoxWidth(s.Width, 4, 80)
 	box := styles.BoxStyle(boxWidth)

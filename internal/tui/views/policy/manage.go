@@ -40,8 +40,7 @@ type ManageUpdateResult struct {
 func ManageView(s ManageState) string {
 	var b strings.Builder
 
-	b.WriteString(styles.HeaderStyle.Render("Manage Policies"))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader("Manage Policies"))
 
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
 

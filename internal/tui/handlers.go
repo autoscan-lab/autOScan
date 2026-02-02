@@ -10,7 +10,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/config"
 	"github.com/feli05/autoscan/internal/domain"
 	"github.com/feli05/autoscan/internal/engine"
@@ -22,6 +21,7 @@ import (
 	"github.com/feli05/autoscan/internal/tui/views/home"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
+	"github.com/feli05/autoscan/internal/tui/views/submissions"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -121,7 +121,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, result.Cmd
 		case ViewSubmissions:
-			return m.updateSubmissions(msg)
+			result := submissions.Update(m.buildSubmissionsState(), msg)
+			m.applySubmissionsResult(result)
+			switch result.Nav {
+			case submissions.NavGoHome:
+				m.currentView = ViewHome
+				m.results = nil
+				m.report = nil
+			case submissions.NavGoDetails:
+				m.currentView = ViewDetails
+				m.detailsTab = 0
+				m.detailScroll = 0
+				m.clearRunResults()
+				m.executor = nil
+			case submissions.NavGoExport:
+				m.currentView = ViewExport
+				m.exportCursor = 0
+			case submissions.NavStartRun:
+				return m.startRun()
+			}
+			if result.ComputeSimilarityFor != "" {
+				return m, m.computeSimilarityForProcess(result.ComputeSimilarityFor)
+			}
+			return m, result.Cmd
 		case ViewDetails:
 			return m.updateDetails(msg)
 		case ViewExport:
@@ -212,12 +234,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.similarityInFlight, msg.process)
 		}
 
-	case pairDetailLoadedMsg:
-		if msg.runID == m.runID && msg.process == m.pairDetailProcess && msg.pairIndex == m.pairDetailPairIndex {
-			m.pairDetailContentA = msg.contentA
-			m.pairDetailContentB = msg.contentB
-			if msg.err != nil {
-				m.pairDetailLoadErr = msg.err.Error()
+	case submissions.PairDetailLoadedMsg:
+		if msg.RunID == m.runID && msg.Process == m.pairDetailProcess && msg.PairIndex == m.pairDetailPairIndex {
+			m.pairDetailContentA = msg.ContentA
+			m.pairDetailContentB = msg.ContentB
+			if msg.Err != nil {
+				m.pairDetailLoadErr = msg.Err.Error()
 			} else {
 				m.pairDetailLoadErr = ""
 			}
@@ -330,6 +352,121 @@ func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) buildSubmissionsState() submissions.State {
+	policyName := "Unknown Policy"
+	if m.selectedPolicy < len(m.policies) {
+		policyName = m.policies[m.selectedPolicy].Name
+	}
+
+	// Pre-compute source files by process from policies
+	sourceFileByProcess := make(map[string]string)
+	for _, proc := range m.similarityProcessNames {
+		sourceFileByProcess[proc] = m.resolveSimilaritySourceFile(proc)
+	}
+
+	return submissions.State{
+		Width:       m.width,
+		Height:      m.height,
+		VisibleRows: m.visibleRows,
+
+		PolicyName: policyName,
+		Root:       m.root,
+
+		Report:    m.report,
+		Results:   m.results,
+		Filtered:  m.filteredResults(),
+		IsRunning: m.isRunning,
+		RunError:  m.runError,
+		RunID:     m.runID,
+
+		Settings: m.settings,
+
+		SubmissionsTab: m.submissionsTab,
+		Cursor:         m.cursor,
+		ScrollOffset:   m.scrollOffset,
+		Filter:         int(m.filter),
+
+		SearchInput:  m.searchInput,
+		SearchActive: m.searchActive,
+		SearchQuery:  m.searchQuery,
+
+		SimilarityProcessNames:   m.similarityProcessNames,
+		SimilaritySelectedProc:   m.similaritySelectedProc,
+		SimilarityPairsByProcess: m.similarityPairsByProcess,
+		SimilarityStateByProcess: m.convertSimilarityState(),
+		SimilarityErrorByProcess: m.similarityErrorByProcess,
+		SimilarityInFlight:       m.similarityInFlight,
+		SimilarityCursor:         m.similarityCursor,
+		SimilarityScroll:         m.similarityScroll,
+
+		PairDetailOpen:        m.pairDetailOpen,
+		PairDetailProcess:     m.pairDetailProcess,
+		PairDetailPairIndex:   m.pairDetailPairIndex,
+		PairDetailContentA:    m.pairDetailContentA,
+		PairDetailContentB:    m.pairDetailContentB,
+		PairDetailLoadErr:     m.pairDetailLoadErr,
+		PairDetailFocusedPane: m.pairDetailFocusedPane,
+		PairDetailScrollA:     m.pairDetailScrollA,
+		PairDetailScrollB:     m.pairDetailScrollB,
+		PairDetailHScrollA:    m.pairDetailHScrollA,
+		PairDetailHScrollB:    m.pairDetailHScrollB,
+
+		Spinner:             m.spinner.View(),
+		SourceFileByProcess: sourceFileByProcess,
+	}
+}
+
+func (m Model) convertSimilarityState() map[string]submissions.SimilarityComputeState {
+	result := make(map[string]submissions.SimilarityComputeState)
+	for k, v := range m.similarityStateByProcess {
+		result[k] = submissions.SimilarityComputeState(v)
+	}
+	return result
+}
+
+func (m *Model) applySubmissionsResult(r submissions.UpdateResult) {
+	m.submissionsTab = r.SubmissionsTab
+	m.cursor = r.Cursor
+	m.scrollOffset = r.ScrollOffset
+	m.filter = Filter(r.Filter)
+
+	m.searchInput = r.SearchInput
+	m.searchActive = r.SearchActive
+	m.searchQuery = r.SearchQuery
+
+	m.similaritySelectedProc = r.SimilaritySelectedProc
+	m.similarityCursor = r.SimilarityCursor
+	m.similarityScroll = r.SimilarityScroll
+
+	if r.SimilarityPairsByProcess != nil {
+		m.similarityPairsByProcess = r.SimilarityPairsByProcess
+	}
+	if r.SimilarityStateByProcess != nil {
+		for k, v := range r.SimilarityStateByProcess {
+			m.similarityStateByProcess[k] = SimilarityComputeState(v)
+		}
+	}
+	if r.SimilarityErrorByProcess != nil {
+		m.similarityErrorByProcess = r.SimilarityErrorByProcess
+	}
+
+	m.pairDetailOpen = r.PairDetailOpen
+	m.pairDetailProcess = r.PairDetailProcess
+	m.pairDetailPairIndex = r.PairDetailPairIndex
+	m.pairDetailContentA = r.PairDetailContentA
+	m.pairDetailContentB = r.PairDetailContentB
+	m.pairDetailLoadErr = r.PairDetailLoadErr
+	m.pairDetailFocusedPane = r.PairDetailFocusedPane
+	m.pairDetailScrollA = r.PairDetailScrollA
+	m.pairDetailScrollB = r.PairDetailScrollB
+	m.pairDetailHScrollA = r.PairDetailHScrollA
+	m.pairDetailHScrollB = r.PairDetailHScrollB
+
+	if r.ClearResults {
+		m.clearRunResults()
+	}
+}
+
 func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	result := policyview.ManageUpdate(policyview.ManageState{
 		Policies:           m.policies,
@@ -367,330 +504,6 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	cmd := m.policyEditor.Update(msg)
 	return m, cmd
-}
-
-func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.isRunning {
-		return m, nil
-	}
-
-	if m.pairDetailOpen {
-		return m.updateSubmissionsPairDetail(msg)
-	}
-
-	if msg.String() == "tab" {
-		if m.report != nil {
-			m.submissionsTab = (m.submissionsTab + 1) % 2
-			if m.submissionsTab == 0 {
-				m.cursor = 0
-				m.scrollOffset = 0
-			} else {
-				m.similarityCursor = 0
-				m.similarityScroll = 0
-				proc := m.currentSimilarityProcessName()
-				if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-					return m, m.computeSimilarityForProcess(proc)
-				}
-			}
-		}
-		return m, nil
-	}
-
-	if m.submissionsTab == 1 {
-		return m.updateSubmissionsSimilarity(msg)
-	}
-
-	if m.searchActive {
-		switch msg.String() {
-		case "esc", "down", "j":
-			m.searchActive = false
-			m.searchQuery = m.searchInput.Value()
-			m.searchInput.Blur()
-			m.cursor = 0
-			m.scrollOffset = 0
-			return m, nil
-		case "enter":
-			m.searchActive = false
-			m.searchQuery = m.searchInput.Value()
-			m.searchInput.Blur()
-			return m, nil
-		}
-
-		prev := m.searchInput.Value()
-		var cmd tea.Cmd
-		m.searchInput, cmd = m.searchInput.Update(msg)
-		if m.searchInput.Value() != prev {
-			m.searchQuery = m.searchInput.Value()
-			m.cursor = 0
-			m.scrollOffset = 0
-			m.clearRunResults()
-		}
-		return m, cmd
-	}
-
-	filtered := m.filteredResults()
-
-	switch msg.String() {
-	case "/":
-		m.searchActive = true
-		m.searchInput.Focus()
-		return m, textinput.Blink
-	case "esc":
-		if strings.TrimSpace(m.searchQuery) != "" {
-			m.searchQuery = ""
-			m.searchInput.SetValue("")
-			m.cursor = 0
-			m.scrollOffset = 0
-			m.clearRunResults()
-			return m, nil
-		}
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-		return m, nil
-	case "j", "down":
-		if m.cursor < len(filtered)-1 {
-			m.cursor++
-			if m.cursor >= m.scrollOffset+m.visibleRows {
-				m.scrollOffset++
-			}
-			m.clearRunResults()
-		}
-	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
-			if m.cursor < m.scrollOffset {
-				m.scrollOffset--
-			}
-			m.clearRunResults()
-		} else {
-			m.searchActive = true
-			m.searchInput.Focus()
-			return m, textinput.Blink
-		}
-	case "enter":
-		if len(filtered) > 0 {
-			m.currentView = ViewDetails
-			m.detailsTab = 0
-			m.detailScroll = 0
-			m.clearRunResults()
-			m.executor = nil
-		}
-	case "f":
-		m.filter = (m.filter + 1) % 4
-		m.cursor = 0
-		m.scrollOffset = 0
-	case "r":
-		return m.startRun()
-	case "e":
-		m.currentView = ViewExport
-		m.exportCursor = 0
-	case "q":
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-	}
-
-	return m, nil
-}
-
-func (m Model) updateSubmissionsSimilarity(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-		m.resetPairDetailState()
-		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
-		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
-		m.similarityErrorByProcess = make(map[string]string)
-		return m, nil
-	}
-
-	if len(m.similarityProcessNames) == 0 {
-		return m, nil
-	}
-
-	currentProc := m.currentSimilarityProcessName()
-	if currentProc != "" && m.similarityStateByProcess[currentProc] == SimilarityNotStarted {
-		return m, m.computeSimilarityForProcess(currentProc)
-	}
-
-	pairs := m.similarityPairsByProcess[currentProc]
-	dataRows := min(30, m.visibleRows-1)
-	if dataRows < 6 {
-		dataRows = 6
-	}
-
-	switch msg.String() {
-	case "j", "down":
-		if len(pairs) == 0 {
-			return m, nil
-		}
-		if m.similarityCursor < len(pairs)-1 {
-			m.similarityCursor++
-			if m.similarityCursor >= m.similarityScroll+dataRows {
-				m.similarityScroll++
-			}
-		}
-	case "k", "up":
-		if len(pairs) == 0 {
-			return m, nil
-		}
-		if m.similarityCursor > 0 {
-			m.similarityCursor--
-			if m.similarityCursor < m.similarityScroll {
-				m.similarityScroll--
-			}
-		}
-	case "l", "right":
-		if m.similaritySelectedProc < len(m.similarityProcessNames)-1 {
-			m.similaritySelectedProc++
-			m.similarityCursor = 0
-			m.similarityScroll = 0
-			proc := m.currentSimilarityProcessName()
-			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-				return m, m.computeSimilarityForProcess(proc)
-			}
-		}
-	case "h", "left":
-		if m.similaritySelectedProc > 0 {
-			m.similaritySelectedProc--
-			m.similarityCursor = 0
-			m.similarityScroll = 0
-			proc := m.currentSimilarityProcessName()
-			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-				return m, m.computeSimilarityForProcess(proc)
-			}
-		}
-	case "enter":
-		if len(pairs) == 0 || m.similarityCursor >= len(pairs) {
-			return m, nil
-		}
-		pair := pairs[m.similarityCursor]
-		srcFile := m.resolveSimilaritySourceFile(currentProc)
-		if srcFile == "" && len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
-			srcFile = m.results[0].Submission.CFiles[0]
-		}
-		if srcFile == "" {
-			return m, nil
-		}
-		pathA := filepath.Join(m.results[pair.AIndex].Submission.Path, srcFile)
-		pathB := filepath.Join(m.results[pair.BIndex].Submission.Path, srcFile)
-		m.resetPairDetailViewState()
-		m.pairDetailOpen = true
-		m.pairDetailProcess = currentProc
-		m.pairDetailPairIndex = m.similarityCursor
-		return m, loadPairDetailFiles(currentProc, m.similarityCursor, pathA, pathB, m.runID)
-	}
-	return m, nil
-}
-
-func loadPairDetailFiles(process string, pairIndex int, pathA, pathB string, runID int64) tea.Cmd {
-	return func() tea.Msg {
-		contentA, errA := os.ReadFile(pathA)
-		if errA != nil {
-			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: nil, contentB: nil, err: errA, runID: runID}
-		}
-		contentB, errB := os.ReadFile(pathB)
-		if errB != nil {
-			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: nil, err: errB, runID: runID}
-		}
-		return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: contentB, err: nil, runID: runID}
-	}
-}
-
-func (m Model) updateSubmissionsPairDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	pairs := m.similarityPairsByProcess[m.pairDetailProcess]
-	if m.pairDetailPairIndex >= len(pairs) {
-		m.resetPairDetailState()
-		return m, nil
-	}
-
-	const pairDetailMaxPaneHeight = 30
-	paneHeight := pairDetailMaxPaneHeight
-	if m.visibleRows < paneHeight {
-		paneHeight = m.visibleRows
-	}
-	if paneHeight < 8 {
-		paneHeight = 8
-	}
-
-	linesA := len(strings.Split(string(m.pairDetailContentA), "\n"))
-	linesB := len(strings.Split(string(m.pairDetailContentB), "\n"))
-	maxScrollA := max(0, linesA-paneHeight)
-	maxScrollB := max(0, linesB-paneHeight)
-	_, contentWidth := pairDetailPaneWidths(m.width)
-	maxHScrollA := max(0, maxDisplayWidthForContent(m.pairDetailContentA)-contentWidth)
-	maxHScrollB := max(0, maxDisplayWidthForContent(m.pairDetailContentB)-contentWidth)
-
-	switch msg.String() {
-	case "esc", "q":
-		m.pairDetailOpen = false
-		return m, nil
-	case "h":
-		m.pairDetailFocusedPane = 0
-		return m, nil
-	case "l":
-		m.pairDetailFocusedPane = 1
-		return m, nil
-	case "down":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailScrollA < maxScrollA {
-				m.pairDetailScrollA++
-			}
-		} else {
-			if m.pairDetailScrollB < maxScrollB {
-				m.pairDetailScrollB++
-			}
-		}
-	case "up":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailScrollA > 0 {
-				m.pairDetailScrollA--
-			}
-		} else {
-			if m.pairDetailScrollB > 0 {
-				m.pairDetailScrollB--
-			}
-		}
-	case "right":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailHScrollA < maxHScrollA {
-				m.pairDetailHScrollA++
-			}
-		} else {
-			if m.pairDetailHScrollB < maxHScrollB {
-				m.pairDetailHScrollB++
-			}
-		}
-	case "left":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailHScrollA > 0 {
-				m.pairDetailHScrollA--
-			}
-		} else {
-			if m.pairDetailHScrollB > 0 {
-				m.pairDetailHScrollB--
-			}
-		}
-	}
-	return m, nil
-}
-
-func maxDisplayWidthForContent(content []byte) int {
-	if len(content) == 0 {
-		return 0
-	}
-	maxWidth := 0
-	for _, line := range strings.Split(string(content), "\n") {
-		line = components.SanitizeDisplay(line)
-		line = expandTabsForPane(line, pairDetailTabWidth)
-		if w := lipgloss.Width(line); w > maxWidth {
-			maxWidth = w
-		}
-	}
-	return maxWidth
 }
 
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
