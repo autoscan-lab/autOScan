@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -55,8 +56,6 @@ func expandTabs(s string, width int) string {
 	return b.String()
 }
 
-// TruncateToWidth truncates a string to fit within maxWidth display columns.
-// Uses lipgloss.Width for accurate display width calculation.
 func TruncateToWidth(s string, maxWidth int) string {
 	s = SanitizeDisplay(s)
 	s = expandTabs(s, tabWidth)
@@ -224,7 +223,47 @@ func (ns NumberSetting) View() string {
 	return b.String()
 }
 
-// RenderHeader renders a styled page header with trailing newlines.
 func RenderHeader(title string) string {
 	return styles.HeaderStyle.Render(title) + "\n\n"
+}
+
+func TruncatePathToFilename(s string) string {
+	if strings.Contains(s, "/") && !strings.HasPrefix(s, "-") {
+		return filepath.Base(s)
+	}
+	return s
+}
+
+func TruncatePathsInText(text string) string {
+	result := text
+	parts := strings.Split(result, "/")
+	if len(parts) > 1 {
+		result = truncateAbsolutePaths(result)
+	}
+	return result
+}
+
+func truncateAbsolutePaths(text string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(text) {
+		if text[i] == '/' && i+1 < len(text) && (text[i+1] == 'U' || text[i+1] == 'h' || text[i+1] == 'v' || text[i+1] == 't') {
+			pathEnd := i + 1
+			for pathEnd < len(text) && text[pathEnd] != ' ' && text[pathEnd] != ':' && text[pathEnd] != '\n' && text[pathEnd] != ')' && text[pathEnd] != '(' {
+				pathEnd++
+			}
+			if pathEnd > i+1 {
+				pathStr := text[i:pathEnd]
+				if strings.Count(pathStr, "/") > 2 {
+					filename := filepath.Base(pathStr)
+					result.WriteString(filename)
+					i = pathEnd
+					continue
+				}
+			}
+		}
+		result.WriteByte(text[i])
+		i++
+	}
+	return result.String()
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -16,6 +15,7 @@ import (
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/views/banned"
+	"github.com/feli05/autoscan/internal/tui/views/details"
 	"github.com/feli05/autoscan/internal/tui/views/directory"
 	exportview "github.com/feli05/autoscan/internal/tui/views/export"
 	"github.com/feli05/autoscan/internal/tui/views/home"
@@ -145,7 +145,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, result.Cmd
 		case ViewDetails:
-			return m.updateDetails(msg)
+			state := m.buildDetailsState()
+			result := details.Update(state, msg)
+			return m.applyDetailsResult(result)
 		case ViewExport:
 			result := exportview.Update(exportview.State{
 				Width:        m.width,
@@ -202,7 +204,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.similarityInFlight = make(map[string]bool)
 		m.similarityCursor = 0
 		m.similarityScroll = 0
-		m.initSimilarityProcesses()
+
+		// Initialize similarity process names from policy
+		m.similaritySelectedProc = 0
+		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+			m.similarityProcessNames = submissions.InitSimilarityProcesses(m.policies[m.selectedPolicy])
+		} else {
+			m.similarityProcessNames = nil
+		}
+		for _, p := range m.similarityProcessNames {
+			m.similarityStateByProcess[p] = SimilarityNotStarted
+		}
 
 		m.resetPairDetailState()
 
@@ -360,8 +372,12 @@ func (m Model) buildSubmissionsState() submissions.State {
 
 	// Pre-compute source files by process from policies
 	sourceFileByProcess := make(map[string]string)
+	var currentPolicy *policy.Policy
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		currentPolicy = m.policies[m.selectedPolicy]
+	}
 	for _, proc := range m.similarityProcessNames {
-		sourceFileByProcess[proc] = m.resolveSimilaritySourceFile(proc)
+		sourceFileByProcess[proc] = submissions.ResolveSourceFile(currentPolicy, proc)
 	}
 
 	return submissions.State{
@@ -374,7 +390,7 @@ func (m Model) buildSubmissionsState() submissions.State {
 
 		Report:    m.report,
 		Results:   m.results,
-		Filtered:  m.filteredResults(),
+		Filtered:  submissions.FilterResults(m.results, int(m.filter), m.searchQuery),
 		IsRunning: m.isRunning,
 		RunError:  m.runError,
 		RunID:     m.runID,
@@ -506,416 +522,108 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	getBannedFuncCount := func() int {
-		filtered := m.filteredResults()
-		if m.cursor >= len(filtered) {
-			return 0
-		}
-		return len(filtered[m.cursor].Scan.HitsByFunction)
+func (m Model) buildDetailsState() details.State {
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
+	var result domain.SubmissionResult
+	var submissionID string
+	if m.cursor < len(filtered) {
+		result = filtered[m.cursor]
+		submissionID = result.Submission.ID
 	}
 
-	if m.detailsTab == 3 {
-		return m.updateRunTab(msg)
+	// Determine if multi-process mode
+	isMultiProcess := false
+	var testCases []policy.TestCase
+	var testScenarios []policy.MultiProcessScenario
+	var multiProcessExecs []policy.ProcessConfig
+
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		p := m.policies[m.selectedPolicy]
+		testCases = p.Run.TestCases
+		if mp := p.Run.MultiProcess; mp != nil && mp.Enabled && len(mp.Executables) > 0 {
+			isMultiProcess = true
+			testScenarios = mp.TestScenarios
+			multiProcessExecs = mp.Executables
+		}
 	}
 
-	switch msg.String() {
-	case "tab":
-		m.detailsTab = (m.detailsTab + 1) % 4
-		m.detailScroll = 0
-		m.bannedCursor = 0
-		if m.detailsTab == 3 {
-			m.runInputFocused = 0
-			m.runArgsInput.Focus()
-			m.runStdinInput.Blur()
-		}
-	case "shift+tab":
-		m.detailsTab = (m.detailsTab + 3) % 4
-		m.detailScroll = 0
-		m.bannedCursor = 0
-		if m.detailsTab == 3 {
-			m.runInputFocused = 0
-			m.runArgsInput.Focus()
-			m.runStdinInput.Blur()
-		}
-	case "j", "down":
-		if m.detailsTab == 1 {
-			maxCursor := getBannedFuncCount() - 1
-			if maxCursor >= 0 && m.bannedCursor < maxCursor {
-				m.bannedCursor++
-			}
-		} else {
-			m.detailScroll++
-		}
-	case "k", "up":
-		if m.detailsTab == 1 {
-			if m.bannedCursor > 0 {
-				m.bannedCursor--
-			}
-		} else if m.detailScroll > 0 {
-			m.detailScroll--
-		}
-	case "enter", " ":
-		if m.detailsTab == 1 {
-			if m.expandedFuncs == nil {
-				m.expandedFuncs = make(map[string]bool)
-			}
-			filtered := m.filteredResults()
-			if m.cursor < len(filtered) {
-				r := filtered[m.cursor]
-				var funcNames []string
-				for fn := range r.Scan.HitsByFunction {
-					funcNames = append(funcNames, fn)
-				}
-				sort.Strings(funcNames)
-				if m.bannedCursor < len(funcNames) {
-					fn := funcNames[m.bannedCursor]
-					m.expandedFuncs[fn] = !m.expandedFuncs[fn]
-				}
-			}
-		}
-	case "q", "esc":
-		m.currentView = ViewSubmissions
-		m.expandedFuncs = nil
-		m.bannedCursor = 0
-		m.clearRunResults()
+	return details.State{
+		Width:              m.width,
+		Height:             m.height,
+		Result:             result,
+		SubmissionID:       submissionID,
+		DetailsTab:         m.detailsTab,
+		DetailScroll:       m.detailScroll,
+		BannedCursor:       m.bannedCursor,
+		ExpandedFuncs:      m.expandedFuncs,
+		RunInputFocused:    m.runInputFocused,
+		SelectedProcessIdx: m.selectedProcessIdx,
+		OutputScroll:       m.outputScroll,
+		IsExecuting:        m.isExecuting,
+		SpinnerView:        m.spinner.View(),
+		RunArgsInput:       m.runArgsInput,
+		RunStdinInput:      m.runStdinInput,
+		RunResult:          m.runResult,
+		RunTestResults:     m.runTestResults,
+		MultiProcessResult: m.multiProcessResult,
+		ShowMultiProcess:   m.showMultiProcess,
+		IsMultiProcess:     isMultiProcess,
+		TestCases:          testCases,
+		TestScenarios:      testScenarios,
+		MultiProcessExecs:  multiProcessExecs,
+		KeepBinaries:       m.settings.KeepBinaries,
 	}
-	return m, nil
 }
 
-func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.isExecuting {
-		switch msg.String() {
-		case "ctrl+k", "K":
-			if m.runCancelFunc != nil {
-				m.runCancelFunc()
-				m.runCancelFunc = nil
-			}
-			m.isExecuting = false
-			m.statusMsg = "Processes killed (SIGKILL)"
-			return m, nil
-		}
-		return m, nil
-	}
+func (m Model) applyDetailsResult(result details.UpdateResult) (tea.Model, tea.Cmd) {
+	m.detailsTab = result.DetailsTab
+	m.detailScroll = result.DetailScroll
+	m.bannedCursor = result.BannedCursor
+	m.expandedFuncs = result.ExpandedFuncs
+	m.runInputFocused = result.RunInputFocused
+	m.selectedProcessIdx = result.SelectedProcessIdx
+	m.outputScroll = result.OutputScroll
+	m.showMultiProcess = result.ShowMultiProcess
+	m.runArgsInput = result.RunArgsInput
+	m.runStdinInput = result.RunStdinInput
 
-	isMultiProcess := false
-	var mp *policy.MultiProcessConfig
-	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-		mp = m.policies[m.selectedPolicy].Run.MultiProcess
-		if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-			isMultiProcess = true
-		}
-	}
-
-	if isMultiProcess {
-		scenarioCount := len(mp.TestScenarios)
-		maxFocus := scenarioCount
-
-		if m.multiProcessResult != nil && m.selectedProcessIdx >= 0 {
-			numProcs := len(m.multiProcessResult.Order)
-			maxScroll := 0
-			if m.selectedProcessIdx < numProcs {
-				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
-				proc := m.multiProcessResult.Processes[procName]
-
-				boxWidth := (m.width - 20) / 2
-				if boxWidth < 30 {
-					boxWidth = 30
-				}
-				contentWidth := boxWidth - 4
-
-				var outputLen int
-				if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
-					outputLen = len(proc.OutputDiff)
-					if proc.Stderr != "" {
-						outputLen++
-						outputLen++
-						outputLen += len(components.WrapLines(proc.Stderr, contentWidth))
-					}
-				} else {
-					allOutput := proc.Stdout
-					if proc.Stderr != "" {
-						if allOutput != "" {
-							allOutput += "\nstderr:\n" + proc.Stderr
-						} else {
-							allOutput = "stderr:\n" + proc.Stderr
-						}
-					}
-					outputLen = len(components.WrapLines(allOutput, contentWidth))
-				}
-				maxScroll = outputLen - 8
-				if maxScroll < 0 {
-					maxScroll = 0
-				}
-			}
-
-			switch msg.String() {
-			case "up", "k":
-				if m.outputScroll > 0 {
-					m.outputScroll--
-				}
-				return m, nil
-			case "down", "j":
-				if m.outputScroll < maxScroll {
-					m.outputScroll++
-				}
-				return m, nil
-			case "esc", "enter":
-				m.selectedProcessIdx = -1
-				m.outputScroll = 0
-				return m, nil
-			}
-			return m, nil
-		}
-
-		if m.multiProcessResult != nil && len(m.multiProcessResult.Order) > 0 {
-			numProcs := len(m.multiProcessResult.Order)
-			processStartIdx := 1 + scenarioCount
-
-			switch msg.String() {
-			case "tab":
-				m.detailsTab = 0
-				m.detailScroll = 0
-				return m, nil
-
-			case "shift+tab":
-				m.detailsTab = 2
-				m.detailScroll = 0
-				return m, nil
-
-			case "down", "j":
-				maxIdx := processStartIdx + numProcs - 1
-				if m.runInputFocused < maxIdx {
-					m.runInputFocused++
-				}
-				return m, nil
-
-			case "up", "k":
-				if m.runInputFocused > 0 {
-					m.runInputFocused--
-				}
-				return m, nil
-
-			case "enter":
-				if m.runInputFocused == 0 {
-					return m, m.executeMultiProcess()
-				} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
-					return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
-				} else if m.runInputFocused >= processStartIdx {
-					m.selectedProcessIdx = m.runInputFocused - processStartIdx
-					m.outputScroll = 0
-					return m, nil
-				}
-
-			case "m":
-				return m, m.executeMultiProcess()
-
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(msg.String()[0] - '1')
-				if idx >= 0 && idx < scenarioCount {
-					return m, m.executeMultiProcessScenario(idx)
-				}
-
-			case "esc", "q":
-				m.currentView = ViewSubmissions
-				m.expandedFuncs = nil
-				m.multiProcessResult = nil
-				m.showMultiProcess = false
-				return m, nil
-			}
-			return m, nil
-		}
-
-		switch msg.String() {
-		case "tab":
-			m.detailsTab = 0
-			m.detailScroll = 0
-			return m, nil
-
-		case "shift+tab":
-			m.detailsTab = 2
-			m.detailScroll = 0
-			return m, nil
-
-		case "down", "j":
-			if m.runInputFocused < maxFocus {
-				m.runInputFocused++
-			}
-			return m, nil
-
-		case "up", "k":
-			if m.runInputFocused > 0 {
-				m.runInputFocused--
-			}
-			return m, nil
-
-		case "enter":
-			if m.runInputFocused == 0 {
-				return m, m.executeMultiProcess()
-			} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
-				return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
-			}
-
-		case "m":
-			return m, m.executeMultiProcess()
-
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(msg.String()[0] - '1')
-			if idx >= 0 && idx < scenarioCount {
-				return m, m.executeMultiProcessScenario(idx)
-			}
-
-		case "esc", "q":
-			m.currentView = ViewSubmissions
-			m.expandedFuncs = nil
-			m.multiProcessResult = nil
-			m.showMultiProcess = false
-			return m, nil
-		}
-
-		return m, nil
-	}
-
-	testCaseCount := 0
-	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
-	}
-
-	maxFocus := 2 + testCaseCount
-	outputBoxIdx := maxFocus + 1
-
-	if m.runResult != nil && m.selectedProcessIdx >= 0 {
-		// Calculate content width same as view
-		boxWidth := m.width - 14
-		if boxWidth < 40 {
-			boxWidth = 40
-		}
-		contentWidth := boxWidth - 4
-
-		var outputLen int
-		if m.runResult.OutputMatch == domain.OutputMatchFail && len(m.runResult.OutputDiff) > 0 {
-			outputLen = len(m.runResult.OutputDiff)
-			if m.runResult.Stderr != "" {
-				outputLen++
-				outputLen++
-				outputLen += len(components.WrapLines(m.runResult.Stderr, contentWidth))
-			}
-		} else {
-			allOutput := m.runResult.Stdout
-			if m.runResult.Stderr != "" {
-				if allOutput != "" {
-					allOutput += "\nstderr:\n" + m.runResult.Stderr
-				} else {
-					allOutput = "stderr:\n" + m.runResult.Stderr
-				}
-			}
-			outputLen = len(components.WrapLines(allOutput, contentWidth))
-		}
-		maxScroll := outputLen - 15
-		if maxScroll < 0 {
-			maxScroll = 0
-		}
-
-		switch msg.String() {
-		case "up", "k":
-			if m.outputScroll > 0 {
-				m.outputScroll--
-			}
-			return m, nil
-		case "down", "j":
-			if m.outputScroll < maxScroll {
-				m.outputScroll++
-			}
-			return m, nil
-		case "esc", "enter":
-			m.selectedProcessIdx = -1
-			m.outputScroll = 0
-			m.runInputFocused = outputBoxIdx
-			return m, nil
-		}
-		return m, nil
-	}
-
-	switch msg.String() {
-	case "tab":
-		m.detailsTab = 0
-		m.detailScroll = 0
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		return m, nil
-
-	case "shift+tab":
-		m.detailsTab = 2
-		m.detailScroll = 0
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		return m, nil
-
-	case "down", "j":
-		maxIdx := maxFocus
-		if m.runResult != nil {
-			maxIdx = outputBoxIdx
-		}
-		if m.runInputFocused < maxIdx {
-			m.runInputFocused++
-		}
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		if m.runInputFocused == 0 {
-			m.runArgsInput.Focus()
-		} else if m.runInputFocused == 1 {
-			m.runStdinInput.Focus()
-		}
-		return m, nil
-
-	case "up", "k":
-		if m.runInputFocused > 0 {
-			m.runInputFocused--
-		}
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		if m.runInputFocused == 0 {
-			m.runArgsInput.Focus()
-		} else if m.runInputFocused == 1 {
-			m.runStdinInput.Focus()
-		}
-		return m, nil
-
-	case "enter":
-		if m.runResult != nil && m.runInputFocused == outputBoxIdx {
-			m.selectedProcessIdx = 0
-			m.outputScroll = 0
-			return m, nil
-		}
-		if m.runInputFocused == 2 {
-			return m, m.executeSubmission()
-		} else if m.runInputFocused > 2 && m.runInputFocused <= maxFocus {
-			testIdx := m.runInputFocused - 3
-			return m, m.executeTestCase(testIdx)
-		}
-
-	case "r":
-		if m.runInputFocused >= 2 {
-			return m, m.executeSubmission()
-		}
-
-	case "esc", "q":
+	if result.GoBack {
 		m.currentView = ViewSubmissions
 		m.expandedFuncs = nil
+		m.bannedCursor = 0
 		m.clearRunResults()
 		m.runArgsInput.Blur()
 		m.runStdinInput.Blur()
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	if m.runInputFocused == 0 {
-		m.runArgsInput, cmd = m.runArgsInput.Update(msg)
-	} else if m.runInputFocused == 1 {
-		m.runStdinInput, cmd = m.runStdinInput.Update(msg)
+	if result.CancelExecution {
+		if m.runCancelFunc != nil {
+			m.runCancelFunc()
+			m.runCancelFunc = nil
+		}
+		m.isExecuting = false
+		m.statusMsg = "Processes killed (SIGKILL)"
+		return m, nil
 	}
 
-	return m, cmd
+	if result.ExecuteSubmission {
+		return m, m.executeSubmission()
+	}
+
+	if result.ExecuteTestCase >= 0 {
+		return m, m.executeTestCase(result.ExecuteTestCase)
+	}
+
+	if result.ExecuteMultiProcess {
+		return m, m.executeMultiProcess()
+	}
+
+	if result.ExecuteScenario >= 0 {
+		return m, m.executeMultiProcessScenario(result.ExecuteScenario)
+	}
+
+	return m, result.Cmd
 }
 
 func (m *Model) loadPolicies() tea.Cmd {
@@ -1042,69 +750,6 @@ func (m Model) saveBannedList() tea.Cmd {
 	}
 }
 
-func (m *Model) initSimilarityProcesses() {
-	m.similarityProcessNames = nil
-	m.similaritySelectedProc = 0
-
-	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
-		return
-	}
-
-	pol := m.policies[m.selectedPolicy]
-	mp := pol.Run.MultiProcess
-	if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-		for _, proc := range mp.Executables {
-			m.similarityProcessNames = append(m.similarityProcessNames, proc.Name)
-		}
-	} else {
-		name := pol.Compile.SourceFile
-		if name == "" {
-			name = "main"
-		}
-		m.similarityProcessNames = []string{name}
-	}
-
-	if m.similarityStateByProcess == nil {
-		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
-	}
-	if m.similarityErrorByProcess == nil {
-		m.similarityErrorByProcess = make(map[string]string)
-	}
-	if m.similarityInFlight == nil {
-		m.similarityInFlight = make(map[string]bool)
-	}
-	for _, p := range m.similarityProcessNames {
-		m.similarityStateByProcess[p] = SimilarityNotStarted
-	}
-}
-
-func (m Model) currentSimilarityProcessName() string {
-	if len(m.similarityProcessNames) == 0 {
-		return ""
-	}
-	if m.similaritySelectedProc < 0 || m.similaritySelectedProc >= len(m.similarityProcessNames) {
-		return m.similarityProcessNames[0]
-	}
-	return m.similarityProcessNames[m.similaritySelectedProc]
-}
-
-func (m Model) resolveSimilaritySourceFile(process string) string {
-	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
-		return ""
-	}
-
-	pol := m.policies[m.selectedPolicy]
-	if mp := pol.Run.MultiProcess; mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-		for _, proc := range mp.Executables {
-			if proc.Name == process {
-				return proc.SourceFile
-			}
-		}
-		return ""
-	}
-	return pol.Compile.SourceFile
-}
-
 func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 	if m.report == nil || len(m.results) == 0 {
 		return nil
@@ -1128,7 +773,11 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 		return nil
 	}
 
-	srcFile := m.resolveSimilaritySourceFile(process)
+	var currentPolicy *policy.Policy
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		currentPolicy = m.policies[m.selectedPolicy]
+	}
+	srcFile := submissions.ResolveSourceFile(currentPolicy, process)
 	if srcFile == "" {
 		if len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
 			srcFile = m.results[0].Submission.CFiles[0]
@@ -1170,43 +819,6 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 	)
 }
 
-func (m Model) filteredResults() []domain.SubmissionResult {
-	if m.results == nil {
-		return nil
-	}
-
-	var filtered []domain.SubmissionResult
-	query := strings.ToLower(strings.TrimSpace(m.searchQuery))
-	for _, r := range m.results {
-		switch m.filter {
-		case FilterFailed:
-			if !r.Compile.OK {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		case FilterBanned:
-			if r.Scan.TotalHits() > 0 {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		case FilterClean:
-			if r.Status == domain.StatusClean {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		default:
-			if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-				filtered = append(filtered, r)
-			}
-		}
-	}
-
-	return filtered
-}
-
 func (m *Model) getExecutor() *engine.Executor {
 	if m.executor != nil {
 		return m.executor
@@ -1233,7 +845,7 @@ func (m *Model) getExecutor() *engine.Executor {
 }
 
 func (m *Model) executeSubmission() tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1270,7 +882,7 @@ func (m *Model) executeSubmission() tea.Cmd {
 }
 
 func (m Model) executeTestCase(testIdx int) tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1306,7 +918,7 @@ func (m Model) executeTestCase(testIdx int) tea.Cmd {
 }
 
 func (m *Model) executeMultiProcess() tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1355,7 +967,7 @@ func (m *Model) executeMultiProcess() tea.Cmd {
 }
 
 func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
