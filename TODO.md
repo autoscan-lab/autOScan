@@ -6,8 +6,8 @@
   - [x] Create `views/settings/` subpackage
   - [x] Create `views/home/` subpackage
   - [x] Create `views/policy/` subpackage (select.go, manage.go, editor.go)
-  - [ ] Create `views/banned/` subpackage
-  - [ ] Create `views/directory/` subpackage
+  - [x] Create `views/banned/` subpackage
+  - [x] Create `views/directory/` subpackage
   - [ ] Create `views/submissions/` subpackage (largest)
   - [ ] Create `views/details/` subpackage
   - [ ] Create `views/export/` subpackage

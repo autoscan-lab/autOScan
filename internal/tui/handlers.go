@@ -16,6 +16,8 @@ import (
 	"github.com/feli05/autoscan/internal/engine"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/views/banned"
+	"github.com/feli05/autoscan/internal/tui/views/directory"
 	"github.com/feli05/autoscan/internal/tui/views/home"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
@@ -66,7 +68,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewPolicyEditor:
 			return m.updatePolicyEditor(msg)
 		case ViewBannedEditor:
-			return m.updateBannedEditor(msg)
+			result := banned.Update(banned.State{
+				Width:            m.width,
+				BannedList:       m.bannedList,
+				BannedCursorEdit: m.bannedCursorEdit,
+				BannedEditing:    m.bannedEditing,
+				BannedInput:      m.bannedInput,
+			}, msg)
+			m.bannedList = result.BannedList
+			m.bannedCursorEdit = result.BannedCursorEdit
+			m.bannedEditing = result.BannedEditing
+			m.bannedInput = result.BannedInput
+			if result.Save {
+				cmds = append(cmds, m.saveBannedList())
+			}
+			if result.GoBack {
+				m.currentView = ViewPolicyManage
+			}
+			if result.NeedsInputCmd {
+				cmds = append(cmds, textinput.Blink)
+			}
+			return m, tea.Batch(cmds...)
 		case ViewSettings:
 			result := settings.Update(settings.State{
 				Settings:       &m.settings,
@@ -80,7 +102,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case ViewDirectoryInput:
-			return m.updateDirectoryInput(msg)
+			result := directory.Update(directory.State{
+				Width:         m.width,
+				InputError:    m.inputError,
+				FolderBrowser: m.folderBrowser,
+			}, msg)
+			m.folderBrowser = result.FolderBrowser
+			if result.GoBack {
+				m.currentView = ViewPolicySelect
+				m.inputError = ""
+				return m, nil
+			}
+			if result.Selected {
+				m.root = result.SelectedPath
+				m.inputError = ""
+				return m.startRun()
+			}
+			return m, result.Cmd
 		case ViewSubmissions:
 			return m.updateSubmissions(msg)
 		case ViewDetails:
@@ -315,24 +353,6 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	cmd := m.policyEditor.Update(msg)
-	return m, cmd
-}
-
-func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.currentView = ViewPolicySelect
-		m.inputError = ""
-		return m, nil
-	}
-
-	selected, cmd := m.folderBrowser.Update(msg)
-	if selected {
-		m.root = m.folderBrowser.Selected()
-		m.inputError = ""
-		return m.startRun()
-	}
-
 	return m, cmd
 }
 
@@ -1088,67 +1108,6 @@ func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "q", "esc":
 		m.currentView = ViewSubmissions
-	}
-	return m, nil
-}
-
-func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.bannedEditing {
-		switch msg.String() {
-		case "enter":
-			newVal := strings.TrimSpace(m.bannedInput.Value())
-			if newVal != "" && m.bannedCursorEdit < len(m.bannedList) {
-				m.bannedList[m.bannedCursorEdit] = newVal
-			}
-			m.bannedEditing = false
-			m.bannedInput.Blur()
-			return m, nil
-		case "esc":
-			m.bannedEditing = false
-			m.bannedInput.Blur()
-			return m, nil
-		default:
-			var cmd tea.Cmd
-			m.bannedInput, cmd = m.bannedInput.Update(msg)
-			return m, cmd
-		}
-	}
-
-	switch msg.String() {
-	case "j", "down":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList)-1 {
-			m.bannedCursorEdit++
-		}
-	case "k", "up":
-		if m.bannedCursorEdit > 0 {
-			m.bannedCursorEdit--
-		}
-	case "enter", "e":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList) {
-			m.bannedEditing = true
-			m.bannedInput.SetValue(m.bannedList[m.bannedCursorEdit])
-			m.bannedInput.Focus()
-			return m, textinput.Blink
-		}
-	case "a":
-		m.bannedList = append(m.bannedList, "new_function")
-		m.bannedCursorEdit = len(m.bannedList) - 1
-		m.bannedEditing = true
-		m.bannedInput.SetValue("new_function")
-		m.bannedInput.Focus()
-		return m, textinput.Blink
-	case "d", "backspace":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList) {
-			m.bannedList = append(m.bannedList[:m.bannedCursorEdit], m.bannedList[m.bannedCursorEdit+1:]...)
-			if m.bannedCursorEdit >= len(m.bannedList) && m.bannedCursorEdit > 0 {
-				m.bannedCursorEdit--
-			}
-		}
-	case "s", "ctrl+s":
-		return m, m.saveBannedList()
-	case "q", "esc":
-		m.currentView = ViewPolicyManage
-		return m, m.saveBannedList()
 	}
 	return m, nil
 }

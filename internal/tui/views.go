@@ -12,6 +12,8 @@ import (
 	"github.com/feli05/autoscan/internal/export"
 	"github.com/feli05/autoscan/internal/tui/components"
 	"github.com/feli05/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/tui/views/banned"
+	"github.com/feli05/autoscan/internal/tui/views/directory"
 	"github.com/feli05/autoscan/internal/tui/views/home"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 	"github.com/feli05/autoscan/internal/tui/views/settings"
@@ -71,7 +73,13 @@ func (m Model) View() string {
 			})
 		}
 	case ViewBannedEditor:
-		content = m.renderBannedEditor()
+		content = banned.View(banned.State{
+			Width:            m.width,
+			BannedList:       m.bannedList,
+			BannedCursorEdit: m.bannedCursorEdit,
+			BannedEditing:    m.bannedEditing,
+			BannedInput:      m.bannedInput,
+		})
 	case ViewSettings:
 		content = settings.View(settings.State{
 			Settings:       &m.settings,
@@ -79,7 +87,11 @@ func (m Model) View() string {
 			Width:          m.width,
 		})
 	case ViewDirectoryInput:
-		content = m.renderDirectoryInput()
+		content = directory.View(directory.State{
+			Width:         m.width,
+			InputError:    m.inputError,
+			FolderBrowser: m.folderBrowser,
+		})
 	case ViewSubmissions:
 		content = m.renderSubmissions()
 	case ViewDetails:
@@ -119,38 +131,6 @@ func (m Model) View() string {
 		lipgloss.Top,
 		content,
 	)
-}
-
-func (m Model) renderDirectoryInput() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Select Directory"))
-	b.WriteString("\n\n")
-
-	boxWidth := components.BoxWidth(m.width, 8, 60)
-	box := styles.BoxStyle(boxWidth)
-
-	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Navigate to submissions folder"))
-	content.WriteString("\n\n")
-	content.WriteString(m.folderBrowser.View())
-
-	b.WriteString(box.Render(content.String()))
-
-	if m.inputError != "" {
-		b.WriteString("\n")
-		b.WriteString(styles.ErrorText.Render("  " + m.inputError))
-	}
-
-	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{"↑/↓", "navigate"},
-		{"enter", "select/open"},
-		{"←/backspace", "parent dir"},
-		{"esc", "cancel"},
-	}))
-
-	return b.String()
 }
 
 func (m Model) renderSubmissions() string {
@@ -1884,50 +1864,4 @@ func (m Model) doExport() tea.Cmd {
 		}
 		return exportDoneMsg{format: format, path: path}
 	}
-}
-
-func (m Model) renderBannedEditor() string {
-	var b strings.Builder
-
-	b.WriteString(styles.HeaderStyle.Render("Edit Banned Functions"))
-	b.WriteString("\n\n")
-
-	box := styles.BoxStyle(min(50, m.width-4))
-
-	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Global banned function list"))
-	content.WriteString("\n\n")
-
-	if len(m.bannedList) == 0 {
-		content.WriteString(styles.SubtleText.Render("  (no banned functions)"))
-		content.WriteString("\n")
-	} else {
-		for i, fn := range m.bannedList {
-			cursor := "  "
-			style := styles.NormalItem
-			if i == m.bannedCursorEdit {
-				cursor = "▸ "
-				style = styles.SelectedItem
-			}
-
-			if m.bannedEditing && i == m.bannedCursorEdit {
-				content.WriteString(fmt.Sprintf("%s%s\n", cursor, m.bannedInput.View()))
-			} else {
-				content.WriteString(fmt.Sprintf("%s%s\n", cursor, style.Render(fn)))
-			}
-		}
-	}
-
-	b.WriteString(box.Render(content.String()))
-
-	b.WriteString("\n\n")
-	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{"↑/↓", "navigate"},
-		{"a", "add"},
-		{"e/enter", "edit"},
-		{"d", "delete"},
-		{"esc", "save & exit"},
-	}))
-
-	return b.String()
 }
