@@ -6,10 +6,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type SelectState struct {
@@ -34,20 +32,16 @@ func SelectView(s SelectState) string {
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
 
 	if len(s.Policies) == 0 {
-		box := styles.WarningBoxStyle(boxWidth)
-		content := styles.WarningText.Render("No policies found!") + "\n\n" +
-			styles.SubtleText.Render("Create a policy via Manage Policies or edit ~/.config/autoscan/")
+		box := components.WarningBoxStyle(boxWidth)
+		content := components.WarningText.Render("No policies found!") + "\n\n" +
+			components.SubtleText.Render("Create a policy via Manage Policies or edit ~/.config/autoscan/")
 		b.WriteString(box.Render(content))
 	} else {
-		box := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Primary).
-			Padding(1, 2).
-			Width(boxWidth)
+		box := components.PrimaryBoxStyle().Width(boxWidth)
 
 		var list strings.Builder
 
-		list.WriteString(styles.SubtleText.Render(fmt.Sprintf("Available policies: %d", len(s.Policies))))
+		list.WriteString(components.SubtleText.Render(fmt.Sprintf("Available policies: %d", len(s.Policies))))
 		list.WriteString("\n\n")
 
 		for i, p := range s.Policies {
@@ -60,46 +54,42 @@ func SelectView(s SelectState) string {
 		if s.SelectedPolicy < len(s.Policies) {
 			b.WriteString("\n\n")
 
-			detailBox := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(styles.Muted).
-				Padding(1, 2).
-				Width(boxWidth)
+			detailBox := components.RoundedBox().Width(boxWidth)
 
 			var details strings.Builder
 			p := s.Policies[s.SelectedPolicy]
 
-			details.WriteString(styles.Highlight.Render("Policy Details"))
+			details.WriteString(components.Highlight.Render("Policy Details"))
 			details.WriteString("\n\n")
 
-			details.WriteString(styles.SubtleText.Render("  Name:     "))
+			details.WriteString(components.SubtleText.Render("  Name:     "))
 			details.WriteString(p.Name)
 			details.WriteString("\n")
 
 			relPath, _ := filepath.Rel(".", p.FilePath)
-			details.WriteString(styles.SubtleText.Render("  File:     "))
+			details.WriteString(components.SubtleText.Render("  File:     "))
 			details.WriteString(filepath.Base(relPath))
 			details.WriteString("\n")
 
 			isMultiProcess := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
-			details.WriteString(styles.SubtleText.Render("  Mode:     "))
+			details.WriteString(components.SubtleText.Render("  Mode:     "))
 			if isMultiProcess {
-				details.WriteString(styles.SuccessText.Render("Multi-Process"))
+				details.WriteString(components.SuccessText.Render("Multi-Process"))
 			} else {
 				details.WriteString("Single Process")
 			}
 			details.WriteString("\n")
 
-			details.WriteString(styles.SubtleText.Render("  Flags:    "))
+			details.WriteString(components.SubtleText.Render("  Flags:    "))
 			if len(p.Compile.Flags) > 0 {
 				details.WriteString(strings.Join(p.Compile.Flags, " "))
 			} else {
-				details.WriteString(styles.SubtleText.Render("(default)"))
+				details.WriteString(components.SubtleText.Render("(default)"))
 			}
 			details.WriteString("\n")
 
 			if len(p.LibraryFiles) > 0 {
-				details.WriteString(styles.SubtleText.Render("  Libraries:"))
+				details.WriteString(components.SubtleText.Render("  Libraries:"))
 				details.WriteString(strings.Join(p.LibraryFiles, ", "))
 				details.WriteString("\n")
 			}
@@ -108,24 +98,24 @@ func SelectView(s SelectState) string {
 
 			if isMultiProcess {
 				mp := p.Run.MultiProcess
-				details.WriteString(styles.PrimaryText.Render("  Executables"))
+				details.WriteString(components.PrimaryText.Render("  Executables"))
 				details.WriteString("\n")
 				for _, proc := range mp.Executables {
 					details.WriteString(fmt.Sprintf("    • %s ", proc.Name))
-					details.WriteString(styles.SubtleText.Render(fmt.Sprintf("(%s)", proc.SourceFile)))
+					details.WriteString(components.SubtleText.Render(fmt.Sprintf("(%s)", proc.SourceFile)))
 					if proc.StartDelayMs > 0 {
-						details.WriteString(styles.SubtleText.Render(fmt.Sprintf(" +%dms", proc.StartDelayMs)))
+						details.WriteString(components.SubtleText.Render(fmt.Sprintf(" +%dms", proc.StartDelayMs)))
 					}
 					details.WriteString("\n")
 				}
 
 				if len(mp.TestScenarios) > 0 {
 					details.WriteString("\n")
-					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Scenarios (%d)", len(mp.TestScenarios))))
+					details.WriteString(components.PrimaryText.Render(fmt.Sprintf("  Test Scenarios (%d)", len(mp.TestScenarios))))
 					details.WriteString("\n")
 					for i, scenario := range mp.TestScenarios {
 						if i >= 3 {
-							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(mp.TestScenarios)-3)))
+							details.WriteString(components.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(mp.TestScenarios)-3)))
 							details.WriteString("\n")
 							break
 						}
@@ -134,24 +124,24 @@ func SelectView(s SelectState) string {
 				}
 			} else {
 				if p.Compile.SourceFile != "" {
-					details.WriteString(styles.SubtleText.Render("  Source:   "))
+					details.WriteString(components.SubtleText.Render("  Source:   "))
 					details.WriteString(p.Compile.SourceFile)
 					details.WriteString("\n")
 				}
 
 				if len(p.Run.TestCases) > 0 {
-					details.WriteString(styles.PrimaryText.Render(fmt.Sprintf("  Test Cases (%d)", len(p.Run.TestCases))))
+					details.WriteString(components.PrimaryText.Render(fmt.Sprintf("  Test Cases (%d)", len(p.Run.TestCases))))
 					details.WriteString("\n")
 					for i, tc := range p.Run.TestCases {
 						if i >= 3 {
-							details.WriteString(styles.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(p.Run.TestCases)-3)))
+							details.WriteString(components.SubtleText.Render(fmt.Sprintf("    ... and %d more", len(p.Run.TestCases)-3)))
 							details.WriteString("\n")
 							break
 						}
 						details.WriteString(fmt.Sprintf("    • %s\n", tc.Name))
 					}
 				} else {
-					details.WriteString(styles.SubtleText.Render("  No test cases defined"))
+					details.WriteString(components.SubtleText.Render("  No test cases defined"))
 					details.WriteString("\n")
 				}
 			}
@@ -169,7 +159,7 @@ func SelectView(s SelectState) string {
 
 	if s.InputError != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.ErrorText.Render("  " + s.InputError))
+		b.WriteString(components.ErrorText.Render("  " + s.InputError))
 	}
 
 	return b.String()

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/tui/styles"
+	"github.com/feli05/autoscan/internal/tui/components"
 )
 
 func renderBannedTab(s State) string {
@@ -14,11 +14,11 @@ func renderBannedTab(s State) string {
 	var b strings.Builder
 
 	if r.Scan.TotalHits() == 0 {
-		b.WriteString(styles.SuccessText.Render("[OK] No banned function calls detected"))
+		b.WriteString(components.SuccessText.Render("[OK] No banned function calls detected"))
 		return b.String()
 	}
 
-	b.WriteString(styles.WarningText.Render(fmt.Sprintf("[!] %d banned call(s) found", r.Scan.TotalHits())))
+	b.WriteString(components.WarningText.Render(fmt.Sprintf("[!] %d banned call(s) found", r.Scan.TotalHits())))
 	b.WriteString("\n\n")
 
 	var funcNames []string
@@ -38,7 +38,7 @@ func renderBannedTab(s State) string {
 
 		var line string
 		if i == s.BannedCursor {
-			line = "> " + styles.Highlight.Render(fmt.Sprintf("%s %s (%d)", arrow, fn, len(hits)))
+			line = "> " + components.Highlight.Render(fmt.Sprintf("%s %s (%d)", arrow, fn, len(hits)))
 		} else {
 			line = fmt.Sprintf("  %s %s (%d)", arrow, fn, len(hits))
 		}
@@ -51,7 +51,7 @@ func renderBannedTab(s State) string {
 			for j, hit := range hits {
 				if j >= showMax {
 					remaining := len(hits) - showMax
-					b.WriteString(styles.SubtleText.Render(fmt.Sprintf("       ... and %d more calls", remaining)))
+					b.WriteString(components.SubtleText.Render(fmt.Sprintf("       ... and %d more calls", remaining)))
 					b.WriteString("\n")
 					break
 				}
@@ -63,7 +63,7 @@ func renderBannedTab(s State) string {
 					}
 					hitLine = string(runes) + "..."
 				}
-				b.WriteString(styles.SubtleText.Render(hitLine))
+				b.WriteString(components.SubtleText.Render(hitLine))
 				b.WriteString("\n")
 			}
 		}

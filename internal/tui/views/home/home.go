@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 const (
@@ -37,6 +36,25 @@ type State struct {
 	HelpPanelView string
 }
 
+type Navigation int
+
+const (
+	NavNone Navigation = iota
+	NavPolicySelect
+	NavPolicyManage
+	NavSettings
+	NavQuit
+	NavUninstall
+)
+
+type UpdateResult struct {
+	MenuItem                int
+	ConfirmDelete           bool
+	Navigation              Navigation
+	ResetPolicyManageCursor bool
+	ResetSettingsCursor     bool
+}
+
 func View(s State) string {
 	var b strings.Builder
 
@@ -49,8 +67,8 @@ func View(s State) string {
 		menuWidth = 45
 	}
 
-	logoStyled := styles.LogoStyle.Render(logo)
-	taglineStyled := styles.SubtleText.Render("     " + tagline)
+	logoStyled := components.LogoStyle.Render(logo)
+	taglineStyled := components.SubtleText.Render("     " + tagline)
 	animationBox := lipgloss.NewStyle().
 		Width(20).
 		Align(lipgloss.Center).
@@ -66,9 +84,7 @@ func View(s State) string {
 	b.WriteString(topSection)
 	b.WriteString("\n\n")
 
-	menuBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Primary).
+	menuBox := components.PrimaryBoxStyle().
 		Padding(1, 3).
 		Width(menuWidth)
 
@@ -87,12 +103,12 @@ func View(s State) string {
 
 	for _, mi := range menuItems {
 		cursor := "  "
-		style := styles.NormalItem
+		style := components.NormalItem
 		if mi.item == s.MenuItem {
 			cursor = "▸ "
-			style = styles.SelectedItem
+			style = components.SelectedItem
 		}
-		keyStyle := styles.HelpKey.Render(fmt.Sprintf("[%s]", mi.key))
+		keyStyle := components.HelpKey.Render(fmt.Sprintf("[%s]", mi.key))
 		menu.WriteString(fmt.Sprintf("%s%s %s\n", cursor, keyStyle, style.Render(mi.desc)))
 	}
 
@@ -110,28 +126,9 @@ func View(s State) string {
 
 	b.WriteString(bottomSection)
 	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  Use ↑/↓ to navigate, Enter to select"))
+	b.WriteString(components.SubtleText.Render("  Use ↑/↓ to navigate, Enter to select"))
 
 	return b.String()
-}
-
-type Navigation int
-
-const (
-	NavNone Navigation = iota
-	NavPolicySelect
-	NavPolicyManage
-	NavSettings
-	NavQuit
-	NavUninstall
-)
-
-type UpdateResult struct {
-	MenuItem                int
-	ConfirmDelete           bool
-	Navigation              Navigation
-	ResetPolicyManageCursor bool
-	ResetSettingsCursor     bool
 }
 
 func Update(s State, msg tea.KeyMsg) UpdateResult {

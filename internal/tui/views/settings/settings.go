@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/feli05/autoscan/internal/config"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type State struct {
@@ -23,10 +22,10 @@ func View(s State) string {
 	b.WriteString(components.RenderHeader("Settings"))
 
 	boxWidth := components.BoxWidth(s.Width, 4, 80)
-	box := styles.BoxStyle(boxWidth)
+	box := components.BoxStyle(boxWidth)
 
 	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Display Options"))
+	content.WriteString(components.SubtleText.Render("Display Options"))
 	content.WriteString("\n\n")
 
 	toggle1 := components.Toggle{
@@ -66,7 +65,7 @@ func View(s State) string {
 	content.WriteString(workersSetting.View())
 
 	content.WriteString("\n\n")
-	content.WriteString(styles.SubtleText.Render("Plagiarism Detection"))
+	content.WriteString(components.SubtleText.Render("Plagiarism Detection"))
 	content.WriteString("\n\n")
 
 	windowSetting := components.NumberSetting{
@@ -95,7 +94,7 @@ func View(s State) string {
 	b.WriteString(box.Render(content.String()))
 
 	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  Config: ~/.config/autoscan/settings.yaml"))
+	b.WriteString(components.SubtleText.Render("  Config: ~/.config/autoscan/settings.yaml"))
 
 	b.WriteString("\n\n")
 	helpItems := []components.HelpItem{

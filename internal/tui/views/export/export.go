@@ -5,11 +5,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/domain"
 	exportpkg "github.com/feli05/autoscan/internal/export"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type State struct {
@@ -61,37 +59,31 @@ func View(s State) string {
 	}
 
 	for i, f := range formats {
-		borderColor := styles.Muted
+		formatBox := components.RoundedBox().Width(boxWidth)
 		if i == s.ExportCursor {
-			borderColor = styles.Primary
+			formatBox = formatBox.BorderForeground(components.Primary)
 		}
-
-		formatBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor).
-			Padding(1, 2).
-			Width(boxWidth)
 
 		var content strings.Builder
 
 		if i == s.ExportCursor {
 			content.WriteString("▸ ")
-			content.WriteString(styles.SelectedItem.Render(f.name))
+			content.WriteString(components.SelectedItem.Render(f.name))
 		} else {
 			content.WriteString("  ")
-			content.WriteString(styles.NormalItem.Render(f.name))
+			content.WriteString(components.NormalItem.Render(f.name))
 		}
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf("  (%s)", f.ext)))
+		content.WriteString(components.SubtleText.Render(fmt.Sprintf("  (%s)", f.ext)))
 		content.WriteString("\n")
 
-		content.WriteString(styles.SubtleText.Render("  " + f.desc))
+		content.WriteString(components.SubtleText.Render("  " + f.desc))
 
 		b.WriteString(formatBox.Render(content.String()))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render("  Output: ./autoscan_report" + formats[s.ExportCursor].ext))
+	b.WriteString(components.SubtleText.Render("  Output: ./autoscan_report" + formats[s.ExportCursor].ext))
 	b.WriteString("\n\n")
 	b.WriteString(components.RenderHelpBar([]components.HelpItem{
 		{Key: "↑/↓", Desc: "navigate"},

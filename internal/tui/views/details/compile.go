@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 func renderCompileTab(s State) string {
@@ -19,15 +18,15 @@ func renderCompileTab(s State) string {
 	}
 
 	if r.Compile.OK {
-		b.WriteString(styles.SuccessText.Render("[PASS] Compilation successful"))
+		b.WriteString(components.SuccessText.Render("[PASS] Compilation successful"))
 	} else if r.Compile.TimedOut {
-		b.WriteString(styles.ErrorText.Render("[TIMEOUT] Compilation timed out (5s limit)"))
+		b.WriteString(components.ErrorText.Render("[TIMEOUT] Compilation timed out (5s limit)"))
 	} else {
-		b.WriteString(styles.ErrorText.Render(fmt.Sprintf("[FAIL] Compilation failed (exit %d)", r.Compile.ExitCode)))
+		b.WriteString(components.ErrorText.Render(fmt.Sprintf("[FAIL] Compilation failed (exit %d)", r.Compile.ExitCode)))
 	}
 	b.WriteString("\n\n")
 
-	b.WriteString(styles.SubtleText.Render("Command:"))
+	b.WriteString(components.SubtleText.Render("Command:"))
 	b.WriteString("\n")
 	if len(r.Compile.Command) > 0 {
 		var truncatedCmd []string
@@ -42,7 +41,7 @@ func renderCompileTab(s State) string {
 
 	if r.Compile.Stderr != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.SubtleText.Render("Output:"))
+		b.WriteString(components.SubtleText.Render("Output:"))
 		b.WriteString("\n")
 		truncatedStderr := components.TruncatePathsInText(r.Compile.Stderr)
 		lines := strings.Split(truncatedStderr, "\n")
@@ -67,7 +66,7 @@ func renderCompileTab(s State) string {
 			b.WriteString("\n")
 		}
 		if len(lines) > visibleLines {
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n(Showing %d-%d of %d lines, ↑/↓ to scroll)", start+1, end, len(lines))))
+			b.WriteString(components.SubtleText.Render(fmt.Sprintf("\n(Showing %d-%d of %d lines, ↑/↓ to scroll)", start+1, end, len(lines))))
 		}
 	}
 

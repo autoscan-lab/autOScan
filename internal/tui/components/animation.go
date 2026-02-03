@@ -5,7 +5,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type AnimationTickMsg time.Time
@@ -43,8 +42,8 @@ func (e *EyeAnimation) View() string {
 }
 
 func (e *EyeAnimation) getFrames() []string {
-	eyeStyle := styles.EyeColor
-	pupilStyle := styles.EyePupilColor
+	eyeStyle := EyeColor
+	pupilStyle := EyePupilColor
 
 	// Wide open eyes - center
 	eyeOpen := []string{

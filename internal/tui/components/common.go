@@ -7,12 +7,25 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 const tabWidth = 8
 
-var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+var ansiRegexp = regexp.MustCompile(`\x1b\\[[0-9;?]*[A-Za-z]`)
+
+type Toggle struct {
+	Label       string
+	Description string
+	Value       bool
+	Focused     bool
+}
+
+type NumberSetting struct {
+	Label       string
+	Value       string
+	Description []string
+	Focused     bool
+}
 
 func SanitizeDisplay(s string) string {
 	if s == "" {
@@ -148,18 +161,11 @@ func FocusPrefix(focused bool) string {
 }
 
 func RenderMenuItem(text string, selected bool) string {
-	style := styles.NormalItem
+	style := NormalItem
 	if selected {
-		style = styles.SelectedItem
+		style = SelectedItem
 	}
 	return CursorPrefix(selected) + style.Render(text)
-}
-
-type Toggle struct {
-	Label       string
-	Description string
-	Value       bool
-	Focused     bool
 }
 
 func (t *Toggle) View() string {
@@ -168,20 +174,20 @@ func (t *Toggle) View() string {
 		checkbox = "[✓]"
 	}
 
-	checkStyle := styles.SuccessText
+	checkStyle := SuccessText
 	if !t.Value {
-		checkStyle = styles.SubtleText
+		checkStyle = SubtleText
 	}
 
-	labelStyle := styles.NormalItem
+	labelStyle := NormalItem
 	if t.Focused {
-		labelStyle = styles.SelectedItem
+		labelStyle = SelectedItem
 	}
 
 	line := fmt.Sprintf("  %s %s", checkStyle.Render(checkbox), labelStyle.Render(t.Label))
 
 	if t.Description != "" {
-		line += "\n" + styles.SubtleText.Render("      "+t.Description)
+		line += "\n" + SubtleText.Render("      "+t.Description)
 	}
 
 	return line
@@ -191,18 +197,11 @@ func ConfirmDialog(message string) string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(styles.WarningText.Render(message))
+	b.WriteString(WarningText.Render(message))
 	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render("[y] confirm  [n] cancel"))
+	b.WriteString(SubtleText.Render("[y] confirm  [n] cancel"))
 
 	return b.String()
-}
-
-type NumberSetting struct {
-	Label       string
-	Value       string
-	Description []string
-	Focused     bool
 }
 
 func (ns NumberSetting) View() string {
@@ -210,21 +209,21 @@ func (ns NumberSetting) View() string {
 
 	line := fmt.Sprintf("  %s: %s", ns.Label, ns.Value)
 	if ns.Focused {
-		b.WriteString(styles.SelectedItem.Render(line))
+		b.WriteString(SelectedItem.Render(line))
 	} else {
-		b.WriteString(styles.NormalItem.Render(line))
+		b.WriteString(NormalItem.Render(line))
 	}
 
 	for _, desc := range ns.Description {
 		b.WriteString("\n")
-		b.WriteString(styles.SubtleText.Render("      " + desc))
+		b.WriteString(SubtleText.Render("      " + desc))
 	}
 
 	return b.String()
 }
 
 func RenderHeader(title string) string {
-	return styles.HeaderStyle.Render(title) + "\n\n"
+	return HeaderStyle.Render(title) + "\n\n"
 }
 
 func TruncatePathToFilename(s string) string {

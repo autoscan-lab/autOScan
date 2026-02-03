@@ -12,7 +12,6 @@ import (
 	"github.com/feli05/autoscan/internal/engine"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
 )
 
@@ -236,7 +235,7 @@ type Config struct {
 func New(cfg Config) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(styles.Primary)
+	s.Style = lipgloss.NewStyle().Foreground(components.Primary)
 
 	root := cfg.Root
 	if root == "" {
@@ -264,7 +263,7 @@ func New(cfg Config) Model {
 	searchInput.Width = 30
 
 	settings, _ := config.LoadSettings()
-	helpPanel := components.NewHelpPanel(28, styles.Version)
+	helpPanel := components.NewHelpPanel(28, components.Version)
 
 	return Model{
 		currentView:              ViewHome,

@@ -10,7 +10,6 @@ import (
 	"github.com/feli05/autoscan/internal/domain"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type State struct {
@@ -88,7 +87,7 @@ func View(s State) string {
 	// Header with submission ID
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary).
+		Foreground(components.Primary).
 		Padding(1, 2)
 	b.WriteString(header.Render(s.SubmissionID))
 	b.WriteString("\n")
@@ -99,9 +98,9 @@ func View(s State) string {
 	tabRow.WriteString("  ")
 	for i, tab := range tabs {
 		if i == s.DetailsTab {
-			tabRow.WriteString(styles.TabActive.Render(fmt.Sprintf(" %s ", tab)))
+			tabRow.WriteString(components.TabActive.Render(fmt.Sprintf(" %s ", tab)))
 		} else {
-			tabRow.WriteString(styles.TabInactive.Render(fmt.Sprintf(" %s ", tab)))
+			tabRow.WriteString(components.TabInactive.Render(fmt.Sprintf(" %s ", tab)))
 		}
 		tabRow.WriteString(" ")
 	}
@@ -113,11 +112,7 @@ func View(s State) string {
 	if contentWidth < 80 {
 		contentWidth = 80
 	}
-	contentBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(1, 2).
-		Width(contentWidth)
+	contentBox := components.RoundedBox().Width(contentWidth)
 
 	var content string
 	switch s.DetailsTab {

@@ -6,10 +6,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type ManageState struct {
@@ -44,31 +42,23 @@ func ManageView(s ManageState) string {
 
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
 
-	configBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(1, 2).
-		Width(boxWidth)
+	configBox := components.RoundedBox().Width(boxWidth)
 
 	var configSection strings.Builder
-	configSection.WriteString(styles.SubtleText.Render("Configuration"))
+	configSection.WriteString(components.SubtleText.Render("Configuration"))
 	configSection.WriteString("\n\n")
 
 	configSection.WriteString(components.RenderMenuItem("Edit Banned Functions", s.PolicyManageCursor == -1))
 	configSection.WriteString("\n")
-	configSection.WriteString(styles.SubtleText.Render("    Global list of prohibited function calls"))
+	configSection.WriteString(components.SubtleText.Render("    Global list of prohibited function calls"))
 
 	b.WriteString(configBox.Render(configSection.String()))
 	b.WriteString("\n\n")
 
-	policyBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Primary).
-		Padding(1, 2).
-		Width(boxWidth)
+	policyBox := components.PrimaryBoxStyle().Width(boxWidth)
 
 	var policySection strings.Builder
-	policySection.WriteString(styles.PrimaryText.Render(fmt.Sprintf("Policies (%d)", len(s.Policies))))
+	policySection.WriteString(components.PrimaryText.Render(fmt.Sprintf("Policies (%d)", len(s.Policies))))
 	policySection.WriteString("\n\n")
 
 	policySection.WriteString(components.RenderMenuItem("+ Create New Policy", s.PolicyManageCursor == 0))
@@ -86,10 +76,10 @@ func ManageView(s ManageState) string {
 	if s.PolicyManageCursor > 0 && s.PolicyManageCursor <= len(s.Policies) {
 		p := s.Policies[s.PolicyManageCursor-1]
 		policySection.WriteString("\n")
-		policySection.WriteString(styles.SubtleText.Render(fmt.Sprintf("  File: %s", filepath.Base(p.FilePath))))
+		policySection.WriteString(components.SubtleText.Render(fmt.Sprintf("  File: %s", filepath.Base(p.FilePath))))
 		if len(p.Compile.Flags) > 0 {
 			policySection.WriteString("\n")
-			policySection.WriteString(styles.SubtleText.Render(fmt.Sprintf("  Flags: %s", strings.Join(p.Compile.Flags, " "))))
+			policySection.WriteString(components.SubtleText.Render(fmt.Sprintf("  Flags: %s", strings.Join(p.Compile.Flags, " "))))
 		}
 	}
 

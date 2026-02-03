@@ -12,7 +12,6 @@ import (
 	"github.com/feli05/autoscan/internal/config"
 	"github.com/feli05/autoscan/internal/domain"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type SimilarityComputeState int
@@ -470,13 +469,13 @@ func View(s State) string {
 
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary).
+		Foreground(components.Primary).
 		Padding(0, 2)
 
 	b.WriteString("\n")
 	b.WriteString(header.Render(s.PolicyName))
 	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render(fmt.Sprintf("  %s", s.Root)))
+	b.WriteString(components.SubtleText.Render(fmt.Sprintf("  %s", s.Root)))
 	b.WriteString("\n\n")
 
 	tabs := []string{"Results", "Similarity"}
@@ -484,9 +483,9 @@ func View(s State) string {
 	tabRow.WriteString("  ")
 	for i, tab := range tabs {
 		if i == s.SubmissionsTab {
-			tabRow.WriteString(styles.TabActive.Render(fmt.Sprintf(" %s ", tab)))
+			tabRow.WriteString(components.TabActive.Render(fmt.Sprintf(" %s ", tab)))
 		} else {
-			tabRow.WriteString(styles.TabInactive.Render(fmt.Sprintf(" %s ", tab)))
+			tabRow.WriteString(components.TabInactive.Render(fmt.Sprintf(" %s ", tab)))
 		}
 		tabRow.WriteString(" ")
 	}
@@ -495,11 +494,7 @@ func View(s State) string {
 
 	if s.RunError != "" {
 		b.WriteString("\n")
-		errorBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Error).
-			Padding(1, 2)
-		b.WriteString(errorBox.Render(styles.ErrorText.Render("Error: " + s.RunError)))
+		b.WriteString(components.ErrorBoxStyle().Render(components.ErrorText.Render("Error: " + s.RunError)))
 		b.WriteString("\n")
 	} else if s.IsRunning {
 		b.WriteString(fmt.Sprintf("\n  %s Scanning and compiling...\n", s.Spinner))
@@ -524,11 +519,7 @@ func View(s State) string {
 }
 
 func renderHeaderBox(s State) string {
-	statsBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(0, 2).
-		MarginTop(1)
+	statsBox := components.CompactBoxStyle().MarginTop(1)
 
 	if s.SubmissionsTab == 0 {
 		searchLabel := ""
@@ -560,7 +551,7 @@ func renderHeaderBox(s State) string {
 		s.Settings.PlagiarismScoreThreshold,
 	)
 
-	return statsBox.Render(styles.NormalItem.Render(line2))
+	return statsBox.Render(components.NormalItem.Render(line2))
 }
 
 func filterString(f int) string {
@@ -579,21 +570,14 @@ func filterString(f int) string {
 func renderResults(s State) string {
 	var b strings.Builder
 
-	searchBorderColor := styles.Muted
+	searchBox := components.CompactBoxStyle()
 	if s.SearchActive {
-		searchBorderColor = styles.Primary
+		searchBox = searchBox.BorderForeground(components.Primary)
 	}
-	searchBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(searchBorderColor).
-		Padding(0, 2)
 	b.WriteString(searchBox.Render(fmt.Sprintf("Search: %s", s.SearchInput.View())))
 	b.WriteString("\n\n")
 
-	tableBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(0, 1)
+	tableBox := components.TableBoxStyle()
 
 	var table strings.Builder
 
@@ -614,7 +598,7 @@ func renderResults(s State) string {
 
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary)
+		Foreground(components.Primary)
 
 	table.WriteString(headerStyle.Render(fmt.Sprintf("  %-*s %-*s  %-*s  %-*s  %-*s",
 		colStatus, "",
@@ -629,7 +613,7 @@ func renderResults(s State) string {
 	filtered := s.Filtered
 
 	if len(filtered) == 0 && !s.IsRunning {
-		table.WriteString(styles.SubtleText.Render("  No submissions found"))
+		table.WriteString(components.SubtleText.Render("  No submissions found"))
 		table.WriteString("\n")
 	}
 
@@ -643,7 +627,7 @@ func renderResults(s State) string {
 
 		var cursor string
 		if i == s.Cursor {
-			cursor = styles.Highlight.Render("▶ ")
+			cursor = components.Highlight.Render("▶ ")
 		} else {
 			cursor = "  "
 		}
@@ -653,13 +637,13 @@ func renderResults(s State) string {
 		switch r.Status {
 		case domain.StatusClean:
 			statusText = "[OK]"
-			statusStyled = styles.SuccessText.Render(statusText)
+			statusStyled = components.SuccessText.Render(statusText)
 		case domain.StatusBanned:
 			statusText = "[!]"
-			statusStyled = styles.WarningText.Render(statusText)
+			statusStyled = components.WarningText.Render(statusText)
 		case domain.StatusFailed, domain.StatusTimedOut:
 			statusText = "[X]"
-			statusStyled = styles.ErrorText.Render(statusText)
+			statusStyled = components.ErrorText.Render(statusText)
 		default:
 			statusText = "..."
 			statusStyled = statusText
@@ -684,20 +668,20 @@ func renderResults(s State) string {
 		var compileText, compileStyled string
 		if r.Compile.TimedOut {
 			compileText = "TIMEOUT"
-			compileStyled = styles.WarningText.Render(compileText)
+			compileStyled = components.WarningText.Render(compileText)
 		} else if !r.Compile.OK {
 			compileText = "FAIL"
-			compileStyled = styles.ErrorText.Render(compileText)
+			compileStyled = components.ErrorText.Render(compileText)
 		} else {
 			compileText = "OK"
-			compileStyled = styles.SuccessText.Render(compileText)
+			compileStyled = components.SuccessText.Render(compileText)
 		}
 		compilePadding := strings.Repeat(" ", colCompile-len(compileText))
 
 		var bannedText, bannedStyled string
 		if r.Scan.TotalHits() > 0 {
 			bannedText = fmt.Sprintf("%d", r.Scan.TotalHits())
-			bannedStyled = styles.WarningText.Render(bannedText)
+			bannedStyled = components.WarningText.Render(bannedText)
 		} else {
 			bannedText = "-"
 			bannedStyled = bannedText
@@ -707,10 +691,10 @@ func renderResults(s State) string {
 		var gradeText, gradeStyled string
 		if !r.Compile.OK || r.Compile.TimedOut || r.Scan.TotalHits() > 0 {
 			gradeText = "2"
-			gradeStyled = styles.ErrorText.Render(gradeText)
+			gradeStyled = components.ErrorText.Render(gradeText)
 		} else {
 			gradeText = "CHECK"
-			gradeStyled = styles.SuccessText.Render(gradeText)
+			gradeStyled = components.SuccessText.Render(gradeText)
 		}
 
 		table.WriteString(fmt.Sprintf("%s%s%s %s%s  %s%s  %s%s  %s\n",
@@ -723,7 +707,7 @@ func renderResults(s State) string {
 	}
 
 	if len(filtered) > s.VisibleRows {
-		table.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  Showing %d-%d of %d",
+		table.WriteString(components.SubtleText.Render(fmt.Sprintf("\n  Showing %d-%d of %d",
 			s.ScrollOffset+1, endIdx, len(filtered))))
 	}
 
@@ -748,23 +732,23 @@ func renderSimilarity(s State) string {
 	var b strings.Builder
 
 	if s.Report == nil {
-		b.WriteString(styles.SubtleText.Render("No run data available. Run the grader first."))
+		b.WriteString(components.SubtleText.Render("No run data available. Run the grader first."))
 		return b.String()
 	}
 
 	if len(s.SimilarityProcessNames) == 0 {
-		b.WriteString(styles.SubtleText.Render("No processes configured. Check policy configuration."))
+		b.WriteString(components.SubtleText.Render("No processes configured. Check policy configuration."))
 		b.WriteString("\n")
 		return b.String()
 	}
 
 	b.WriteString("  ")
-	b.WriteString(styles.SubtleText.Render("Process: "))
+	b.WriteString(components.SubtleText.Render("Process: "))
 	for i, name := range s.SimilarityProcessNames {
 		if i == s.SimilaritySelectedProc {
-			b.WriteString(styles.TabActive.Render(fmt.Sprintf(" %s ", name)))
+			b.WriteString(components.TabActive.Render(fmt.Sprintf(" %s ", name)))
 		} else {
-			b.WriteString(styles.TabInactive.Render(fmt.Sprintf(" %s ", name)))
+			b.WriteString(components.TabInactive.Render(fmt.Sprintf(" %s ", name)))
 		}
 		b.WriteString(" ")
 	}
@@ -775,26 +759,23 @@ func renderSimilarity(s State) string {
 	state := s.SimilarityStateByProcess[currentProc]
 
 	if errText, ok := s.SimilarityErrorByProcess[currentProc]; ok && errText != "" {
-		b.WriteString(styles.WarningText.Render("Similarity error: " + errText))
+		b.WriteString(components.WarningText.Render("Similarity error: " + errText))
 		b.WriteString("\n")
 		return b.String()
 	}
 
 	if state == SimilarityNotStarted || state == SimilarityComputing {
-		b.WriteString(styles.SubtleText.Render("Computing similarity..."))
+		b.WriteString(components.SubtleText.Render("Computing similarity..."))
 		b.WriteString("\n")
 		return b.String()
 	}
 	if len(pairs) == 0 {
-		b.WriteString(styles.SubtleText.Render("No pairs found (not enough comparable submissions)."))
+		b.WriteString(components.SubtleText.Render("No pairs found (not enough comparable submissions)."))
 		b.WriteString("\n")
 		return b.String()
 	}
 
-	tableBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(0, 1)
+	tableBox := components.TableBoxStyle()
 
 	var table strings.Builder
 
@@ -833,7 +814,7 @@ func renderSimilarity(s State) string {
 
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary)
+		Foreground(components.Primary)
 
 	headerLine := "  " +
 		padOrTrim("#", colRank) + " " +
@@ -864,7 +845,7 @@ func renderSimilarity(s State) string {
 
 		cursor := "  "
 		if i == s.SimilarityCursor {
-			cursor = styles.Highlight.Render("▶ ")
+			cursor = components.Highlight.Render("▶ ")
 		}
 
 		rank := i + 1
@@ -903,9 +884,9 @@ func renderSimilarity(s State) string {
 		perFuncText := fmt.Sprintf("%.2f%%", res.PerFuncSimilarity*100)
 
 		statusPadded := padOrTrim(statusText, colStatus)
-		statusRendered := styles.SuccessText.Render(statusPadded)
+		statusRendered := components.SuccessText.Render(statusPadded)
 		if res.Flagged {
-			statusRendered = styles.WarningText.Render(statusPadded)
+			statusRendered = components.WarningText.Render(statusPadded)
 		}
 
 		row := cursor +
@@ -928,7 +909,7 @@ func renderSimilarity(s State) string {
 	if len(pairs) > dataRows {
 		footer = fmt.Sprintf("  Showing %d-%d of %d", s.SimilarityScroll+1, endIdx, len(pairs))
 	}
-	table.WriteString(styles.SubtleText.Render(padOrTrim(footer, 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus)))
+	table.WriteString(components.SubtleText.Render(padOrTrim(footer, 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus)))
 
 	b.WriteString(tableBox.Render(table.String()))
 	b.WriteString("\n\n")
@@ -945,37 +926,33 @@ func renderSimilarity(s State) string {
 
 var pairDetailHighlightStyle = lipgloss.NewStyle().
 	Background(lipgloss.Color("#334155")).
-	Foreground(styles.Text)
+	Foreground(components.Text)
 
 func renderPairDetail(s State) string {
 	var b strings.Builder
 
 	pairs := s.SimilarityPairsByProcess[s.PairDetailProcess]
 	if s.PairDetailPairIndex >= len(pairs) {
-		b.WriteString(styles.SubtleText.Render("No pair selected."))
+		b.WriteString(components.SubtleText.Render("No pair selected."))
 		return b.String()
 	}
 	pair := pairs[s.PairDetailPairIndex]
 	res := pair.Result
 
 	if s.PairDetailLoadErr != "" {
-		b.WriteString(styles.WarningText.Render("Error: " + s.PairDetailLoadErr))
+		b.WriteString(components.WarningText.Render("Error: " + s.PairDetailLoadErr))
 		b.WriteString("\n\n")
 		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
 		return b.String()
 	}
 	if s.PairDetailContentA == nil {
-		b.WriteString(styles.SubtleText.Render("Loading files..."))
+		b.WriteString(components.SubtleText.Render("Loading files..."))
 		b.WriteString("\n\n")
 		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
 		return b.String()
 	}
 
-	statsBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(0, 2).
-		MarginTop(0)
+	statsBox := components.CompactBoxStyle()
 	nameA := s.Results[pair.AIndex].Submission.ID
 	nameB := s.Results[pair.BIndex].Submission.ID
 	if s.Settings.ShortNames {
@@ -1012,7 +989,7 @@ func renderPairDetail(s State) string {
 	leftPane := renderCodePane(s.PairDetailContentA, spansA, s.PairDetailScrollA, s.PairDetailHScrollA, paneHeight, contentWidth)
 	rightPane := renderCodePane(s.PairDetailContentB, spansB, s.PairDetailScrollB, s.PairDetailHScrollB, paneHeight, contentWidth)
 
-	lineStyle := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth)
+	lineStyle := components.FixedWidthStyle(contentWidth)
 	leftLines := strings.Split(strings.TrimSuffix(leftPane, "\n"), "\n")
 	rightLines := strings.Split(strings.TrimSuffix(rightPane, "\n"), "\n")
 	for len(leftLines) < paneHeight {
@@ -1030,24 +1007,20 @@ func renderPairDetail(s State) string {
 		rightContent.WriteString("\n")
 	}
 
-	leftBorderColor := styles.Muted
-	rightBorderColor := styles.Muted
+	leftBorderColor := components.Muted
+	rightBorderColor := components.Muted
 	if s.PairDetailFocusedPane == 0 {
-		leftBorderColor = styles.Primary
+		leftBorderColor = components.Primary
 	} else {
-		rightBorderColor = styles.Primary
+		rightBorderColor = components.Primary
 	}
 
-	leftBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+	leftBox := components.TableBoxStyle().
 		BorderForeground(leftBorderColor).
-		Padding(0, 1).
 		Width(halfWidth).
 		Render(strings.TrimSuffix(leftContent.String(), "\n"))
-	rightBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+	rightBox := components.TableBoxStyle().
 		BorderForeground(rightBorderColor).
-		Padding(0, 1).
 		Width(halfWidth).
 		Render(strings.TrimSuffix(rightContent.String(), "\n"))
 
@@ -1065,7 +1038,7 @@ func renderPairDetail(s State) string {
 		{Key: "esc", Desc: "back"},
 	}))
 	if matchInfo != "" {
-		b.WriteString(styles.SubtleText.Render(matchInfo))
+		b.WriteString(components.SubtleText.Render(matchInfo))
 	}
 	return b.String()
 }

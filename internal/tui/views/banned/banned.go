@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type State struct {
@@ -33,22 +32,22 @@ func View(s State) string {
 
 	b.WriteString(components.RenderHeader("Edit Banned Functions"))
 
-	box := styles.BoxStyle(min(50, s.Width-4))
+	box := components.BoxStyle(min(50, s.Width-4))
 
 	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Global banned function list"))
+	content.WriteString(components.SubtleText.Render("Global banned function list"))
 	content.WriteString("\n\n")
 
 	if len(s.BannedList) == 0 {
-		content.WriteString(styles.SubtleText.Render("  (no banned functions)"))
+		content.WriteString(components.SubtleText.Render("  (no banned functions)"))
 		content.WriteString("\n")
 	} else {
 		for i, fn := range s.BannedList {
 			cursor := "  "
-			style := styles.NormalItem
+			style := components.NormalItem
 			if i == s.BannedCursorEdit {
 				cursor = "▸ "
-				style = styles.SelectedItem
+				style = components.SelectedItem
 			}
 
 			if s.BannedEditing && i == s.BannedCursorEdit {

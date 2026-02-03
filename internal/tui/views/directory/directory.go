@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 type State struct {
@@ -28,10 +27,10 @@ func View(s State) string {
 	b.WriteString(components.RenderHeader("Select Directory"))
 
 	boxWidth := components.BoxWidth(s.Width, 8, 60)
-	box := styles.BoxStyle(boxWidth)
+	box := components.BoxStyle(boxWidth)
 
 	var content strings.Builder
-	content.WriteString(styles.SubtleText.Render("Navigate to submissions folder"))
+	content.WriteString(components.SubtleText.Render("Navigate to submissions folder"))
 	content.WriteString("\n\n")
 	content.WriteString(s.FolderBrowser.View())
 
@@ -39,7 +38,7 @@ func View(s State) string {
 
 	if s.InputError != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.ErrorText.Render("  " + s.InputError))
+		b.WriteString(components.ErrorText.Render("  " + s.InputError))
 	}
 
 	b.WriteString("\n\n")

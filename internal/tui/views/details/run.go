@@ -7,23 +7,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/domain"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 func renderRunTab(s State) string {
 	var b strings.Builder
 
 	if !s.Result.Compile.OK {
-		b.WriteString(styles.ErrorText.Render("[!] Cannot run - compilation failed"))
+		b.WriteString(components.ErrorText.Render("[!] Cannot run - compilation failed"))
 		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("Fix compilation errors first."))
+		b.WriteString(components.SubtleText.Render("Fix compilation errors first."))
 		return b.String()
 	}
 
 	if !s.KeepBinaries {
-		b.WriteString(styles.WarningText.Render("[!] Binaries not available"))
+		b.WriteString(components.WarningText.Render("[!] Binaries not available"))
 		b.WriteString("\n\n")
-		b.WriteString(styles.SubtleText.Render("Enable 'Keep Binaries' in Settings, then re-run."))
+		b.WriteString(components.SubtleText.Render("Enable 'Keep Binaries' in Settings, then re-run."))
 		return b.String()
 	}
 
@@ -41,16 +40,16 @@ func renderSingleProcessMode(s State) string {
 		b.WriteString(s.SpinnerView)
 		b.WriteString(" Running...")
 		b.WriteString("\n\n")
-		b.WriteString(styles.WarningText.Render("Press Ctrl+K to cancel"))
+		b.WriteString(components.WarningText.Render("Press Ctrl+K to cancel"))
 		return b.String()
 	}
 
-	b.WriteString(styles.Subtle.Render("Custom Execution"))
+	b.WriteString(components.Subtle.Render("Custom Execution"))
 	b.WriteString("\n\n")
 
 	argsLabel := "  Arguments: "
 	if s.RunInputFocused == 0 {
-		argsLabel = styles.Highlight.Render("> ") + "Arguments: "
+		argsLabel = components.Highlight.Render("> ") + "Arguments: "
 	}
 	b.WriteString(argsLabel)
 	b.WriteString(s.RunArgsInput.View())
@@ -58,34 +57,34 @@ func renderSingleProcessMode(s State) string {
 
 	stdinLabel := "  Stdin:     "
 	if s.RunInputFocused == 1 {
-		stdinLabel = styles.Highlight.Render("> ") + "Stdin:     "
+		stdinLabel = components.Highlight.Render("> ") + "Stdin:     "
 	}
 	b.WriteString(stdinLabel)
 	b.WriteString(s.RunStdinInput.View())
 	b.WriteString("\n\n")
 
 	if s.RunInputFocused == 2 {
-		b.WriteString(styles.Highlight.Render("> "))
-		b.WriteString(styles.SelectedItem.Render("[ Run ]"))
+		b.WriteString(components.Highlight.Render("> "))
+		b.WriteString(components.SelectedItem.Render("[ Run ]"))
 	} else {
 		b.WriteString("  ")
-		b.WriteString(styles.SubtleText.Render("[ Run ]"))
+		b.WriteString(components.SubtleText.Render("[ Run ]"))
 	}
 	b.WriteString("\n")
 
 	// Test cases from policy
 	if len(s.TestCases) > 0 {
 		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("Preset Test Cases"))
-		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(s.TestCases))))
+		b.WriteString(components.Subtle.Render("Preset Test Cases"))
+		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%d)", len(s.TestCases))))
 		b.WriteString("\n\n")
 
 		for i, tc := range s.TestCases {
 			cursor := "  "
-			style := styles.NormalItem
+			style := components.NormalItem
 			if s.RunInputFocused == 3+i {
-				cursor = styles.Highlight.Render("> ")
-				style = styles.SelectedItem
+				cursor = components.Highlight.Render("> ")
+				style = components.SelectedItem
 			}
 
 			name := tc.Name
@@ -98,14 +97,14 @@ func renderSingleProcessMode(s State) string {
 				argsInfo = fmt.Sprintf(" [%s]", strings.Join(tc.Args, " "))
 			}
 
-			b.WriteString(fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), styles.SubtleText.Render(argsInfo)))
+			b.WriteString(fmt.Sprintf("%s%s%s\n", cursor, style.Render(name), components.SubtleText.Render(argsInfo)))
 		}
 	}
 
 	// Last run result
 	if s.RunResult != nil {
 		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("─── Last Result ───"))
+		b.WriteString(components.Subtle.Render("─── Last Result ───"))
 		b.WriteString("\n\n")
 		b.WriteString(renderExecuteResult(s))
 	}
@@ -113,7 +112,7 @@ func renderSingleProcessMode(s State) string {
 	// Test results
 	if len(s.RunTestResults) > 0 {
 		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("─── Test Results ───"))
+		b.WriteString(components.Subtle.Render("─── Test Results ───"))
 		b.WriteString("\n\n")
 
 		passed := 0
@@ -124,9 +123,9 @@ func renderSingleProcessMode(s State) string {
 		}
 
 		if passed == len(s.RunTestResults) {
-			b.WriteString(styles.SuccessText.Render(fmt.Sprintf("All %d tests passed!", passed)))
+			b.WriteString(components.SuccessText.Render(fmt.Sprintf("All %d tests passed!", passed)))
 		} else {
-			b.WriteString(styles.WarningText.Render(fmt.Sprintf("%d/%d tests passed", passed, len(s.RunTestResults))))
+			b.WriteString(components.WarningText.Render(fmt.Sprintf("%d/%d tests passed", passed, len(s.RunTestResults))))
 		}
 		b.WriteString("\n\n")
 
@@ -136,11 +135,11 @@ func renderSingleProcessMode(s State) string {
 				name = "Test"
 			}
 			if tr.Passed {
-				b.WriteString(styles.SuccessText.Render(fmt.Sprintf("  [PASS] %s", name)))
+				b.WriteString(components.SuccessText.Render(fmt.Sprintf("  [PASS] %s", name)))
 			} else {
-				b.WriteString(styles.ErrorText.Render(fmt.Sprintf("  [FAIL] %s", name)))
+				b.WriteString(components.ErrorText.Render(fmt.Sprintf("  [FAIL] %s", name)))
 			}
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (exit %d, %dms)", tr.ExitCode, tr.Duration.Milliseconds())))
+			b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (exit %d, %dms)", tr.ExitCode, tr.Duration.Milliseconds())))
 			b.WriteString("\n")
 		}
 	}
@@ -151,41 +150,41 @@ func renderSingleProcessMode(s State) string {
 func renderMultiProcessMode(s State) string {
 	var b strings.Builder
 
-	b.WriteString(styles.Subtle.Render("Multi-Process Mode"))
-	b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d processes)", len(s.MultiProcessExecs))))
+	b.WriteString(components.Subtle.Render("Multi-Process Mode"))
+	b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%d processes)", len(s.MultiProcessExecs))))
 	b.WriteString("\n\n")
 
 	for _, proc := range s.MultiProcessExecs {
 		b.WriteString(fmt.Sprintf("  • %s (%s)", proc.Name, proc.SourceFile))
 		if proc.StartDelayMs > 0 {
-			b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [delay: %dms]", proc.StartDelayMs)))
+			b.WriteString(components.SubtleText.Render(fmt.Sprintf(" [delay: %dms]", proc.StartDelayMs)))
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	if s.RunInputFocused == 0 {
-		b.WriteString(styles.Highlight.Render("> "))
-		b.WriteString(styles.SelectedItem.Render("[ Run ]"))
+		b.WriteString(components.Highlight.Render("> "))
+		b.WriteString(components.SelectedItem.Render("[ Run ]"))
 	} else {
 		b.WriteString("  ")
-		b.WriteString(styles.NormalItem.Render("[ Run ]"))
+		b.WriteString(components.NormalItem.Render("[ Run ]"))
 	}
 	b.WriteString("\n")
 
 	// Test scenarios
 	if len(s.TestScenarios) > 0 {
 		b.WriteString("\n")
-		b.WriteString(styles.Subtle.Render("Test Scenarios"))
-		b.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(s.TestScenarios))))
+		b.WriteString(components.Subtle.Render("Test Scenarios"))
+		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%d)", len(s.TestScenarios))))
 		b.WriteString("\n\n")
 
 		for i, scenario := range s.TestScenarios {
 			cursor := "  "
-			style := styles.NormalItem
+			style := components.NormalItem
 			if s.RunInputFocused == 1+i {
-				cursor = styles.Highlight.Render("> ")
-				style = styles.SelectedItem
+				cursor = components.Highlight.Render("> ")
+				style = components.SelectedItem
 			}
 			b.WriteString(fmt.Sprintf("%s%s\n", cursor, style.Render(scenario.Name)))
 		}
@@ -208,12 +207,12 @@ func renderMultiProcessGrid(s State) string {
 	var b strings.Builder
 
 	if s.MultiProcessResult.ScenarioName != "" {
-		b.WriteString(styles.Subtle.Render(fmt.Sprintf("─── %s ───", s.MultiProcessResult.ScenarioName)))
+		b.WriteString(components.Subtle.Render(fmt.Sprintf("─── %s ───", s.MultiProcessResult.ScenarioName)))
 	} else {
-		b.WriteString(styles.Subtle.Render("─── Multi-Process Results ───"))
+		b.WriteString(components.Subtle.Render("─── Multi-Process Results ───"))
 	}
 	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render(fmt.Sprintf("Total: %dms", s.MultiProcessResult.TotalDuration.Milliseconds())))
+	b.WriteString(components.SubtleText.Render(fmt.Sprintf("Total: %dms", s.MultiProcessResult.TotalDuration.Milliseconds())))
 
 	anyRunning := false
 	anyKilled := false
@@ -227,16 +226,16 @@ func renderMultiProcessGrid(s State) string {
 	}
 
 	if anyRunning {
-		b.WriteString(styles.PrimaryText.Render(" [RUNNING...]"))
-		b.WriteString(styles.SubtleText.Render(" (Ctrl+K to kill)"))
+		b.WriteString(components.PrimaryText.Render(" [RUNNING...]"))
+		b.WriteString(components.SubtleText.Render(" (Ctrl+K to kill)"))
 	} else if s.MultiProcessResult.AllPassed {
-		b.WriteString(styles.SuccessText.Render(" [ALL PASSED]"))
+		b.WriteString(components.SuccessText.Render(" [ALL PASSED]"))
 	} else if anyKilled {
-		b.WriteString(styles.WarningText.Render(" [KILLED]"))
-	} else if s.MultiProcessResult.AllCompleted {
-		b.WriteString(styles.WarningText.Render(" [Some failed]"))
+		b.WriteString(components.WarningText.Render(" [KILLED]"))
+	} else if !s.MultiProcessResult.AllPassed {
+		b.WriteString(components.WarningText.Render(" [Some failed]"))
 	} else {
-		b.WriteString(styles.ErrorText.Render(" [Incomplete]"))
+		b.WriteString(components.ErrorText.Render(" [Incomplete]"))
 	}
 	b.WriteString("\n\n")
 
@@ -321,20 +320,20 @@ func renderProcessRow(s State, processes []string, startIdx, colWidth, scenarioC
 }
 
 func renderProcessBox(s State, proc *domain.ProcessResult, width int, isSelected, isFocused bool, scrollOffset int) string {
-	borderColor := styles.Muted
+	borderColor := components.Muted
 	if isFocused {
-		borderColor = styles.Accent
+		borderColor = components.Accent
 	} else if isSelected {
-		borderColor = styles.PrimaryGlow
+		borderColor = components.PrimaryGlow
 	} else if proc.Running {
-		borderColor = styles.Primary
+		borderColor = components.Primary
 	} else if proc.Killed {
-		borderColor = styles.Warning
+		borderColor = components.Warning
 	} else if proc.ExpectedExit != nil {
 		if proc.Passed {
-			borderColor = styles.Success
+			borderColor = components.Success
 		} else {
-			borderColor = styles.Error
+			borderColor = components.Error
 		}
 	}
 
@@ -348,9 +347,9 @@ func renderProcessBox(s State, proc *domain.ProcessResult, width int, isSelected
 	allOutput := components.SanitizeDisplay(proc.Stdout)
 	if proc.Stderr != "" {
 		if allOutput != "" {
-			allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
+			allOutput += "\n" + components.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
 		} else {
-			allOutput = styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
+			allOutput = components.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(proc.Stderr)
 		}
 	}
 
@@ -370,10 +369,10 @@ func renderProcessBox(s State, proc *domain.ProcessResult, width int, isSelected
 			sourceInfo = ""
 		}
 	}
-	content.WriteString(styles.Subtle.Render(header))
-	content.WriteString(styles.SubtleText.Render(sourceInfo))
+	content.WriteString(components.Subtle.Render(header))
+	content.WriteString(components.SubtleText.Render(sourceInfo))
 	if isFocused && totalLines > maxShow {
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
+		content.WriteString(components.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
 	}
 	content.WriteString("\n")
 
@@ -403,10 +402,8 @@ func renderProcessBox(s State, proc *domain.ProcessResult, width int, isSelected
 		content.WriteString("\n")
 	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+	box := components.TableBoxStyle().
 		BorderForeground(borderColor).
-		Padding(0, 1).
 		Width(width)
 
 	return box.Render(content.String())
@@ -430,15 +427,15 @@ func renderExecuteResult(s State) string {
 	isSelected := s.RunInputFocused == outputBoxIdx
 	isFocused := s.SelectedProcessIdx >= 0
 
-	borderColor := styles.Muted
+	borderColor := components.Muted
 	if isFocused {
-		borderColor = styles.Accent
+		borderColor = components.Accent
 	} else if isSelected {
-		borderColor = styles.PrimaryGlow
+		borderColor = components.PrimaryGlow
 	} else if r.ExitCode == 0 && !r.TimedOut {
-		borderColor = styles.Success
+		borderColor = components.Success
 	} else {
-		borderColor = styles.Warning
+		borderColor = components.Warning
 	}
 
 	var content strings.Builder
@@ -455,9 +452,9 @@ func renderExecuteResult(s State) string {
 		allOutput := components.SanitizeDisplay(r.Stdout)
 		if r.Stderr != "" {
 			if allOutput != "" {
-				allOutput += "\n" + styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
+				allOutput += "\n" + components.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
 			} else {
-				allOutput = styles.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
+				allOutput = components.WarningText.Render("stderr:") + "\n" + components.SanitizeDisplay(r.Stderr)
 			}
 		}
 		outputLines = components.WrapLines(allOutput, contentWidth)
@@ -468,7 +465,7 @@ func renderExecuteResult(s State) string {
 	startIdx, endIdx := components.ScrollIndices(totalLines, maxShow, s.OutputScroll)
 
 	if isFocused && totalLines > maxShow {
-		content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
+		content.WriteString(components.SubtleText.Render(fmt.Sprintf(" [%d-%d/%d]", startIdx+1, endIdx, totalLines)))
 	}
 	content.WriteString("\n")
 
@@ -482,16 +479,14 @@ func renderExecuteResult(s State) string {
 			content.WriteString("\n")
 		}
 	} else {
-		content.WriteString(styles.SubtleText.Render("(no output)\n"))
+		content.WriteString(components.SubtleText.Render("(no output)\n"))
 		for i := 1; i < maxShow; i++ {
 			content.WriteString("\n")
 		}
 	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+	box := components.TableBoxStyle().
 		BorderForeground(borderColor).
-		Padding(0, 1).
 		Width(boxWidth)
 
 	return box.Render(content.String())
