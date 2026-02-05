@@ -16,3 +16,4 @@ banned:
   - puts
   - getchar
   - putchar
+  - shutdown
