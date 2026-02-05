@@ -8,10 +8,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
-// FolderBrowser allows navigating and selecting folders or files
 type FolderBrowser struct {
 	currentPath  string
 	entries      []string // folder/file names in current directory
@@ -25,7 +23,6 @@ type FolderBrowser struct {
 	fileExts     []string // allowed file extensions in file mode
 }
 
-// NewFolderBrowser creates a new folder browser starting at the given path
 func NewFolderBrowser(startPath string) FolderBrowser {
 	if startPath == "" {
 		startPath = "."
@@ -97,7 +94,6 @@ func (fb *FolderBrowser) loadEntries() {
 	}
 }
 
-// Update handles keyboard input
 func (fb *FolderBrowser) Update(msg tea.KeyMsg) (selected bool, cmd tea.Cmd) {
 	// Calculate number of fixed items at top
 	fixedItems := 1 // ".." only in file mode
@@ -179,28 +175,24 @@ func (fb *FolderBrowser) Update(msg tea.KeyMsg) (selected bool, cmd tea.Cmd) {
 	return false, nil
 }
 
-// Selected returns the selected path
 func (fb *FolderBrowser) Selected() string {
 	return fb.selected
 }
 
-// View renders the folder browser
 func (fb *FolderBrowser) View() string {
 	var b strings.Builder
 
-	// Current path header
-	b.WriteString(styles.Subtle.Render(fb.currentPath))
+	b.WriteString(Subtle.Render(fb.currentPath))
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 50))
 	b.WriteString("\n")
 
 	if fb.err != "" {
-		b.WriteString(styles.ErrorStyle.Render("Error: " + fb.err))
+		b.WriteString(ErrorStyle.Render("Error: " + fb.err))
 		b.WriteString("\n")
 		return b.String()
 	}
 
-	// Build items list based on mode
 	type item struct {
 		name  string
 		icon  string
@@ -209,24 +201,22 @@ func (fb *FolderBrowser) View() string {
 	var items []item
 
 	if fb.fileMode {
-		// File mode: ".." + entries
 		items = append(items, item{name: "..", icon: "^ ", isDir: true})
 	} else {
-		// Folder mode: "[Select This Folder]" + ".." + entries
 		items = append(items, item{name: "[Select This Folder]", icon: "* ", isDir: true})
 		items = append(items, item{name: "..", icon: "^ ", isDir: true})
 	}
 
 	for i, name := range fb.entries {
-		icon := "/ " // Folder
+		icon := "/ "
 		if !fb.isDir[i] {
-			icon = "# " // File
+			icon = "# "
 		}
 		items = append(items, item{name: name, icon: icon, isDir: fb.isDir[i]})
 	}
 
 	if len(items) == 0 {
-		b.WriteString(styles.Subtle.Render("  (empty directory)"))
+		b.WriteString(Subtle.Render("  (empty directory)"))
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -243,15 +233,14 @@ func (fb *FolderBrowser) View() string {
 		}
 
 		it := items[i]
-		nameStyle := styles.NormalItem
+		nameStyle := NormalItem
 		if i == fb.cursor {
-			nameStyle = styles.SelectedItem
+			nameStyle = SelectedItem
 		}
 
-		// Use different color for files vs folders
-		iconStyle := styles.Subtle
+		iconStyle := Subtle
 		if !it.isDir {
-			iconStyle = styles.SuccessText
+			iconStyle = SuccessText
 		}
 
 		line := cursor + iconStyle.Render(it.icon) + nameStyle.Render(it.name)
@@ -259,16 +248,14 @@ func (fb *FolderBrowser) View() string {
 		b.WriteString("\n")
 	}
 
-	// Scroll indicator
 	if len(items) > fb.visibleRows {
-		b.WriteString(styles.Subtle.Render(fmt.Sprintf("\n  %d-%d of %d",
+		b.WriteString(Subtle.Render(fmt.Sprintf("\n  %d-%d of %d",
 			fb.scrollOffset+1, endIdx, len(items))))
 	}
 
 	return b.String()
 }
 
-// Reset resets the browser to start path
 func (fb *FolderBrowser) Reset(startPath string) {
 	if startPath == "" {
 		startPath = "."
@@ -284,7 +271,6 @@ func (fb *FolderBrowser) Reset(startPath string) {
 	fb.loadEntries()
 }
 
-// SetFileMode enables file selection mode with specified extensions
 func (fb *FolderBrowser) SetFileMode(enabled bool) {
 	fb.fileMode = enabled
 	if enabled {
@@ -295,7 +281,6 @@ func (fb *FolderBrowser) SetFileMode(enabled bool) {
 	fb.loadEntries()
 }
 
-// SetFileExtensions sets allowed file extensions for file mode
 func (fb *FolderBrowser) SetFileExtensions(exts []string) {
 	fb.fileExts = exts
 	if fb.fileMode {

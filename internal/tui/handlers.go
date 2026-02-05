@@ -5,17 +5,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/feli05/autoscan/internal/config"
 	"github.com/feli05/autoscan/internal/domain"
 	"github.com/feli05/autoscan/internal/engine"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/feli05/autoscan/internal/tui/views/banned"
+	"github.com/feli05/autoscan/internal/tui/views/details"
+	"github.com/feli05/autoscan/internal/tui/views/directory"
+	exportview "github.com/feli05/autoscan/internal/tui/views/export"
+	"github.com/feli05/autoscan/internal/tui/views/home"
+	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
+	"github.com/feli05/autoscan/internal/tui/views/settings"
+	"github.com/feli05/autoscan/internal/tui/views/submissions"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -29,7 +35,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.currentView {
 		case ViewHome:
-			return m.updateHome(msg)
+			result := home.Update(home.State{
+				Width:         m.width,
+				MenuItem:      int(m.menuItem),
+				ConfirmDelete: m.confirmDelete,
+				PolicyCount:   len(m.policies),
+			}, msg)
+			m.menuItem = MenuItem(result.MenuItem)
+			m.confirmDelete = result.ConfirmDelete
+			if result.ResetPolicyManageCursor {
+				m.policyManageCursor = 0
+			}
+			if result.ResetSettingsCursor {
+				m.settingsCursor = 0
+			}
+			switch result.Navigation {
+			case home.NavPolicySelect:
+				m.currentView = ViewPolicySelect
+			case home.NavPolicyManage:
+				m.currentView = ViewPolicyManage
+			case home.NavSettings:
+				m.currentView = ViewSettings
+			case home.NavQuit:
+				return m, tea.Quit
+			case home.NavUninstall:
+				return m, m.doUninstall()
+			}
+			return m, nil
 		case ViewPolicySelect:
 			return m.updatePolicySelect(msg)
 		case ViewPolicyManage:
@@ -37,17 +69,99 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewPolicyEditor:
 			return m.updatePolicyEditor(msg)
 		case ViewBannedEditor:
-			return m.updateBannedEditor(msg)
+			result := banned.Update(banned.State{
+				Width:            m.width,
+				BannedList:       m.bannedList,
+				BannedCursorEdit: m.bannedCursorEdit,
+				BannedEditing:    m.bannedEditing,
+				BannedInput:      m.bannedInput,
+			}, msg)
+			m.bannedList = result.BannedList
+			m.bannedCursorEdit = result.BannedCursorEdit
+			m.bannedEditing = result.BannedEditing
+			m.bannedInput = result.BannedInput
+			if result.Save {
+				cmds = append(cmds, m.saveBannedList())
+			}
+			if result.GoBack {
+				m.currentView = ViewPolicyManage
+			}
+			if result.NeedsInputCmd {
+				cmds = append(cmds, textinput.Blink)
+			}
+			return m, tea.Batch(cmds...)
 		case ViewSettings:
-			return m.updateSettings(msg)
+			result := settings.Update(settings.State{
+				Settings:       &m.settings,
+				SettingsCursor: m.settingsCursor,
+				Width:          m.width,
+			}, msg)
+			m.settings = result.Settings
+			m.settingsCursor = result.SettingsCursor
+			if result.GoBack {
+				m.currentView = ViewHome
+			}
+			return m, nil
 		case ViewDirectoryInput:
-			return m.updateDirectoryInput(msg)
+			result := directory.Update(directory.State{
+				Width:         m.width,
+				InputError:    m.inputError,
+				FolderBrowser: m.folderBrowser,
+			}, msg)
+			m.folderBrowser = result.FolderBrowser
+			if result.GoBack {
+				m.currentView = ViewPolicySelect
+				m.inputError = ""
+				return m, nil
+			}
+			if result.Selected {
+				m.root = result.SelectedPath
+				m.inputError = ""
+				return m.startRun()
+			}
+			return m, result.Cmd
 		case ViewSubmissions:
-			return m.updateSubmissions(msg)
+			result := submissions.Update(m.buildSubmissionsState(), msg)
+			m.applySubmissionsResult(result)
+			switch result.Nav {
+			case submissions.NavGoHome:
+				m.currentView = ViewHome
+				m.results = nil
+				m.report = nil
+			case submissions.NavGoDetails:
+				m.currentView = ViewDetails
+				m.detailsTab = 0
+				m.detailScroll = 0
+				m.clearRunResults()
+				m.executor = nil
+			case submissions.NavGoExport:
+				m.currentView = ViewExport
+				m.exportCursor = 0
+			case submissions.NavStartRun:
+				return m.startRun()
+			}
+			if result.ComputeSimilarityFor != "" {
+				return m, m.computeSimilarityForProcess(result.ComputeSimilarityFor)
+			}
+			return m, result.Cmd
 		case ViewDetails:
-			return m.updateDetails(msg)
+			state := m.buildDetailsState()
+			result := details.Update(state, msg)
+			return m.applyDetailsResult(result)
 		case ViewExport:
-			return m.updateExport(msg)
+			result := exportview.Update(exportview.State{
+				Width:        m.width,
+				ExportCursor: m.exportCursor,
+				Report:       m.report,
+			}, msg)
+			m.exportCursor = result.ExportCursor
+			if result.GoBack {
+				m.currentView = ViewSubmissions
+			}
+			if result.DoExport && m.report != nil {
+				return m, exportview.DoExport(*m.report, m.exportCursor)
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -90,7 +204,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.similarityInFlight = make(map[string]bool)
 		m.similarityCursor = 0
 		m.similarityScroll = 0
-		m.initSimilarityProcesses()
+
+		// Initialize similarity process names from policy
+		m.similaritySelectedProc = 0
+		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+			m.similarityProcessNames = submissions.InitSimilarityProcesses(m.policies[m.selectedPolicy])
+		} else {
+			m.similarityProcessNames = nil
+		}
+		for _, p := range m.similarityProcessNames {
+			m.similarityStateByProcess[p] = SimilarityNotStarted
+		}
 
 		m.resetPairDetailState()
 
@@ -98,8 +222,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.runError = msg.Error()
 		m.isRunning = false
 
-	case exportDoneMsg:
-		m.statusMsg = fmt.Sprintf("Exported to %s", msg.path)
+	case exportview.DoneMsg:
+		m.statusMsg = fmt.Sprintf("Exported to %s", msg.Path)
 
 	case similarityStartedMsg:
 		if msg.runID == m.runID {
@@ -122,30 +246,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.similarityInFlight, msg.process)
 		}
 
-	case pairDetailLoadedMsg:
-		if msg.runID == m.runID && msg.process == m.pairDetailProcess && msg.pairIndex == m.pairDetailPairIndex {
-			m.pairDetailContentA = msg.contentA
-			m.pairDetailContentB = msg.contentB
-			if msg.err != nil {
-				m.pairDetailLoadErr = msg.err.Error()
+	case submissions.PairDetailLoadedMsg:
+		if msg.RunID == m.runID && msg.Process == m.pairDetailProcess && msg.PairIndex == m.pairDetailPairIndex {
+			m.pairDetailContentA = msg.ContentA
+			m.pairDetailContentB = msg.ContentB
+			if msg.Err != nil {
+				m.pairDetailLoadErr = msg.Err.Error()
 			} else {
 				m.pairDetailLoadErr = ""
 			}
 		}
 
-	case policySavedMsg:
+	case policyview.SavedMsg:
 		m.currentView = ViewPolicyManage
-		m.statusMsg = fmt.Sprintf("Policy saved to %s", msg.path)
+		m.statusMsg = fmt.Sprintf("Policy saved to %s", msg.Path)
 		return m, m.loadPolicies()
 
-	case policySaveErrorMsg:
-		m.policyEditor.errorMsg = msg.err
+	case policyview.SaveErrorMsg:
+		m.policyEditor.ErrorMsg = msg.Err
 
-	case policyDeletedMsg:
+	case policyview.DeletedMsg:
 		m.currentView = ViewPolicyManage
-		m.statusMsg = fmt.Sprintf("Deleted policy: %s", msg.name)
+		m.statusMsg = fmt.Sprintf("Deleted policy: %s", msg.Name)
 		m.confirmDelete = false
 		return m, m.loadPolicies()
+
+	case policyview.DeleteErrorMsg:
+		m.statusMsg = fmt.Sprintf("Error deleting policy: %s", msg.Err)
+		m.confirmDelete = false
 
 	case uninstallDoneMsg:
 		fmt.Println("\nautoscan has been uninstalled.")
@@ -213,146 +341,172 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.menuItem < MenuQuit {
-			m.menuItem++
-		}
-	case "k", "up":
-		if m.menuItem > MenuRunGrader {
-			m.menuItem--
-		}
-	case "enter":
-		switch m.menuItem {
-		case MenuRunGrader:
-			m.currentView = ViewPolicySelect
-		case MenuManagePolicies:
-			m.currentView = ViewPolicyManage
-			m.policyManageCursor = 0
-		case MenuSettings:
-			m.currentView = ViewSettings
-			m.settingsCursor = 0
-		case MenuUninstall:
-			m.confirmDelete = true
-		case MenuQuit:
-			return m, tea.Quit
-		}
-	case "y":
-		if m.confirmDelete && m.menuItem == MenuUninstall {
-			return m, m.doUninstall()
-		}
-	case "n", "esc":
-		m.confirmDelete = false
-	case "q":
-		if !m.confirmDelete {
-			return m, tea.Quit
-		}
-		m.confirmDelete = false
-	case "1":
-		m.currentView = ViewPolicySelect
-	case "2":
-		m.currentView = ViewPolicyManage
-		m.policyManageCursor = 0
-	case "3":
-		m.currentView = ViewSettings
-		m.settingsCursor = 0
-	case "4":
-		m.confirmDelete = true
-		m.menuItem = MenuUninstall
+func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	oldSelected := m.selectedPolicy
+	result := policyview.SelectUpdate(policyview.SelectState{
+		Policies:       m.policies,
+		SelectedPolicy: m.selectedPolicy,
+		InputError:     m.inputError,
+	}, msg)
+
+	m.selectedPolicy = result.SelectedPolicy
+	m.inputError = result.InputError
+	if result.SelectedPolicy != oldSelected {
+		m.executor = nil
+	}
+	if result.GoBack {
+		m.currentView = ViewHome
+	}
+	if result.GoToDirectory {
+		m.currentView = ViewDirectoryInput
+		m.folderBrowser.Reset(m.root)
 	}
 	return m, nil
 }
 
-func (m Model) updatePolicySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.selectedPolicy < len(m.policies)-1 {
-			m.selectedPolicy++
-			m.executor = nil
-			m.inputError = ""
-		}
-	case "k", "up":
-		if m.selectedPolicy > 0 {
-			m.selectedPolicy--
-			m.executor = nil
-			m.inputError = ""
-		}
-	case "enter":
-		if len(m.policies) > 0 {
-			if m.selectedPolicy < len(m.policies) {
-				p := m.policies[m.selectedPolicy]
-				if p != nil {
-					isMulti := p.Run.MultiProcess != nil && p.Run.MultiProcess.Enabled
-					if isMulti {
-						if len(p.Run.MultiProcess.Executables) == 0 {
-							m.inputError = "Multi-process policy needs at least one executable"
-							return m, nil
-						}
-						for _, proc := range p.Run.MultiProcess.Executables {
-							if strings.TrimSpace(proc.SourceFile) == "" {
-								m.inputError = "Multi-process policy has a missing source file"
-								return m, nil
-							}
-						}
-					} else if strings.TrimSpace(p.Compile.SourceFile) == "" {
-						m.inputError = "Single-process policy requires source_file"
-						return m, nil
-					}
-				}
-			}
-			m.inputError = ""
-			m.currentView = ViewDirectoryInput
-			m.folderBrowser.Reset(m.root)
-			return m, nil
-		}
-	case "q", "esc":
-		m.inputError = ""
-		m.currentView = ViewHome
+func (m Model) buildSubmissionsState() submissions.State {
+	policyName := "Unknown Policy"
+	if m.selectedPolicy < len(m.policies) {
+		policyName = m.policies[m.selectedPolicy].Name
 	}
-	return m, nil
+
+	// Pre-compute source files by process from policies
+	sourceFileByProcess := make(map[string]string)
+	var currentPolicy *policy.Policy
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		currentPolicy = m.policies[m.selectedPolicy]
+	}
+	for _, proc := range m.similarityProcessNames {
+		sourceFileByProcess[proc] = submissions.ResolveSourceFile(currentPolicy, proc)
+	}
+
+	return submissions.State{
+		Width:       m.width,
+		Height:      m.height,
+		VisibleRows: m.visibleRows,
+
+		PolicyName: policyName,
+		Root:       m.root,
+
+		Report:    m.report,
+		Results:   m.results,
+		Filtered:  submissions.FilterResults(m.results, int(m.filter), m.searchQuery),
+		IsRunning: m.isRunning,
+		RunError:  m.runError,
+		RunID:     m.runID,
+
+		Settings: m.settings,
+
+		SubmissionsTab: m.submissionsTab,
+		Cursor:         m.cursor,
+		ScrollOffset:   m.scrollOffset,
+		Filter:         int(m.filter),
+
+		SearchInput:  m.searchInput,
+		SearchActive: m.searchActive,
+		SearchQuery:  m.searchQuery,
+
+		SimilarityProcessNames:   m.similarityProcessNames,
+		SimilaritySelectedProc:   m.similaritySelectedProc,
+		SimilarityPairsByProcess: m.similarityPairsByProcess,
+		SimilarityStateByProcess: m.convertSimilarityState(),
+		SimilarityErrorByProcess: m.similarityErrorByProcess,
+		SimilarityInFlight:       m.similarityInFlight,
+		SimilarityCursor:         m.similarityCursor,
+		SimilarityScroll:         m.similarityScroll,
+
+		PairDetailOpen:        m.pairDetailOpen,
+		PairDetailProcess:     m.pairDetailProcess,
+		PairDetailPairIndex:   m.pairDetailPairIndex,
+		PairDetailContentA:    m.pairDetailContentA,
+		PairDetailContentB:    m.pairDetailContentB,
+		PairDetailLoadErr:     m.pairDetailLoadErr,
+		PairDetailFocusedPane: m.pairDetailFocusedPane,
+		PairDetailScrollA:     m.pairDetailScrollA,
+		PairDetailScrollB:     m.pairDetailScrollB,
+		PairDetailHScrollA:    m.pairDetailHScrollA,
+		PairDetailHScrollB:    m.pairDetailHScrollB,
+
+		Spinner:             m.spinner.View(),
+		SourceFileByProcess: sourceFileByProcess,
+	}
+}
+
+func (m Model) convertSimilarityState() map[string]submissions.SimilarityComputeState {
+	result := make(map[string]submissions.SimilarityComputeState)
+	for k, v := range m.similarityStateByProcess {
+		result[k] = submissions.SimilarityComputeState(v)
+	}
+	return result
+}
+
+func (m *Model) applySubmissionsResult(r submissions.UpdateResult) {
+	m.submissionsTab = r.SubmissionsTab
+	m.cursor = r.Cursor
+	m.scrollOffset = r.ScrollOffset
+	m.filter = Filter(r.Filter)
+
+	m.searchInput = r.SearchInput
+	m.searchActive = r.SearchActive
+	m.searchQuery = r.SearchQuery
+
+	m.similaritySelectedProc = r.SimilaritySelectedProc
+	m.similarityCursor = r.SimilarityCursor
+	m.similarityScroll = r.SimilarityScroll
+
+	if r.SimilarityPairsByProcess != nil {
+		m.similarityPairsByProcess = r.SimilarityPairsByProcess
+	}
+	if r.SimilarityStateByProcess != nil {
+		for k, v := range r.SimilarityStateByProcess {
+			m.similarityStateByProcess[k] = SimilarityComputeState(v)
+		}
+	}
+	if r.SimilarityErrorByProcess != nil {
+		m.similarityErrorByProcess = r.SimilarityErrorByProcess
+	}
+
+	m.pairDetailOpen = r.PairDetailOpen
+	m.pairDetailProcess = r.PairDetailProcess
+	m.pairDetailPairIndex = r.PairDetailPairIndex
+	m.pairDetailContentA = r.PairDetailContentA
+	m.pairDetailContentB = r.PairDetailContentB
+	m.pairDetailLoadErr = r.PairDetailLoadErr
+	m.pairDetailFocusedPane = r.PairDetailFocusedPane
+	m.pairDetailScrollA = r.PairDetailScrollA
+	m.pairDetailScrollB = r.PairDetailScrollB
+	m.pairDetailHScrollA = r.PairDetailHScrollA
+	m.pairDetailHScrollB = r.PairDetailHScrollB
+
+	if r.ClearResults {
+		m.clearRunResults()
+	}
 }
 
 func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	maxCursor := len(m.policies)
+	result := policyview.ManageUpdate(policyview.ManageState{
+		Policies:           m.policies,
+		PolicyManageCursor: m.policyManageCursor,
+		ConfirmDelete:      m.confirmDelete,
+	}, msg)
 
-	switch msg.String() {
-	case "j", "down":
-		if m.policyManageCursor < maxCursor {
-			m.policyManageCursor++
+	m.policyManageCursor = result.PolicyManageCursor
+	m.confirmDelete = result.ConfirmDelete
+
+	switch result.Navigation {
+	case policyview.ManageNavBack:
+		m.currentView = ViewHome
+	case policyview.ManageNavBannedEditor:
+		return m, m.loadBannedList()
+	case policyview.ManageNavNewPolicy:
+		return m, m.openPolicyEditor(nil)
+	case policyview.ManageNavEditPolicy:
+		if result.PolicyToEdit != nil {
+			return m, m.openPolicyEditor(result.PolicyToEdit)
 		}
-	case "k", "up":
-		if m.policyManageCursor > -1 {
-			m.policyManageCursor--
-		}
-	case "enter":
-		if m.policyManageCursor == -1 {
-			return m, m.loadBannedList()
-		} else if m.policyManageCursor == 0 {
-			return m, m.openPolicyEditor(nil)
-		} else {
-			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
-		}
-	case "e":
-		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			return m, m.openPolicyEditor(m.policies[m.policyManageCursor-1])
-		}
-	case "d":
-		if m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			m.confirmDelete = true
-		}
-	case "y":
-		if m.confirmDelete && m.policyManageCursor > 0 && m.policyManageCursor <= len(m.policies) {
-			return m, DeletePolicy(m.policies[m.policyManageCursor-1])
-		}
-	case "n":
-		m.confirmDelete = false
-	case "q", "esc":
-		if m.confirmDelete {
-			m.confirmDelete = false
-		} else {
-			m.currentView = ViewHome
-		}
+	}
+	if result.PolicyToDelete != nil {
+		return m, policyview.DeletePolicy(result.PolicyToDelete)
 	}
 	return m, nil
 }
@@ -360,7 +514,7 @@ func (m Model) updatePolicyManage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" && !m.policyEditor.InSubMode() {
 		m.currentView = ViewPolicyManage
-		m.policyEditor.errorMsg = ""
+		m.policyEditor.ErrorMsg = ""
 		return m, nil
 	}
 
@@ -368,932 +522,108 @@ func (m Model) updatePolicyEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.settingsCursor < 5 {
-			m.settingsCursor++
-		}
-	case "k", "up":
-		if m.settingsCursor > 0 {
-			m.settingsCursor--
-		}
-	case "enter", " ":
-		switch m.settingsCursor {
-		case 0:
-			m.settings.ShortNames = !m.settings.ShortNames
-		case 1:
-			m.settings.KeepBinaries = !m.settings.KeepBinaries
-		default:
-			return m, nil
-		}
-		config.SaveSettings(m.settings)
-	case "+", "=":
-		switch m.settingsCursor {
-		case 2:
-			if m.settings.MaxWorkers < 32 {
-				m.settings.MaxWorkers++
-				config.SaveSettings(m.settings)
-			}
-		case 3:
-			if m.settings.PlagiarismWindowSize < 64 {
-				m.settings.PlagiarismWindowSize++
-				config.SaveSettings(m.settings)
-			}
-		case 4:
-			if m.settings.PlagiarismMinFuncTokens < 1024 {
-				m.settings.PlagiarismMinFuncTokens++
-				config.SaveSettings(m.settings)
-			}
-		case 5:
-			if m.settings.PlagiarismScoreThreshold < 1.0 {
-				m.settings.PlagiarismScoreThreshold += 0.05
-				if m.settings.PlagiarismScoreThreshold > 1.0 {
-					m.settings.PlagiarismScoreThreshold = 1.0
-				}
-				config.SaveSettings(m.settings)
-			}
-		}
-	case "-", "_":
-		switch m.settingsCursor {
-		case 2:
-			if m.settings.MaxWorkers > 0 {
-				m.settings.MaxWorkers--
-				config.SaveSettings(m.settings)
-			}
-		case 3:
-			if m.settings.PlagiarismWindowSize > 1 {
-				m.settings.PlagiarismWindowSize--
-				config.SaveSettings(m.settings)
-			}
-		case 4:
-			if m.settings.PlagiarismMinFuncTokens > 1 {
-				m.settings.PlagiarismMinFuncTokens--
-				config.SaveSettings(m.settings)
-			}
-		case 5:
-			if m.settings.PlagiarismScoreThreshold > 0.0 {
-				m.settings.PlagiarismScoreThreshold -= 0.05
-				if m.settings.PlagiarismScoreThreshold < 0.0 {
-					m.settings.PlagiarismScoreThreshold = 0.0
-				}
-				config.SaveSettings(m.settings)
-			}
-		}
-	case "0":
-		switch m.settingsCursor {
-		case 2:
-			m.settings.MaxWorkers = 0
-			config.SaveSettings(m.settings)
-		case 3:
-			m.settings.PlagiarismWindowSize = 6
-			config.SaveSettings(m.settings)
-		case 4:
-			m.settings.PlagiarismMinFuncTokens = 14
-			config.SaveSettings(m.settings)
-		case 5:
-			m.settings.PlagiarismScoreThreshold = 0.6
-			config.SaveSettings(m.settings)
-		}
-	case "q", "esc":
-		m.currentView = ViewHome
-	}
-	return m, nil
-}
-
-func (m Model) updateDirectoryInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.currentView = ViewPolicySelect
-		m.inputError = ""
-		return m, nil
+func (m Model) buildDetailsState() details.State {
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
+	var result domain.SubmissionResult
+	var submissionID string
+	if m.cursor < len(filtered) {
+		result = filtered[m.cursor]
+		submissionID = result.Submission.ID
 	}
 
-	selected, cmd := m.folderBrowser.Update(msg)
-	if selected {
-		m.root = m.folderBrowser.Selected()
-		m.inputError = ""
-		return m.startRun()
-	}
-
-	return m, cmd
-}
-
-func (m Model) updateSubmissions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.isRunning {
-		return m, nil
-	}
-
-	if m.pairDetailOpen {
-		return m.updateSubmissionsPairDetail(msg)
-	}
-
-	if msg.String() == "tab" {
-		if m.report != nil {
-			m.submissionsTab = (m.submissionsTab + 1) % 2
-			if m.submissionsTab == 0 {
-				m.cursor = 0
-				m.scrollOffset = 0
-			} else {
-				m.similarityCursor = 0
-				m.similarityScroll = 0
-				proc := m.currentSimilarityProcessName()
-				if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-					return m, m.computeSimilarityForProcess(proc)
-				}
-			}
-		}
-		return m, nil
-	}
-
-	if m.submissionsTab == 1 {
-		return m.updateSubmissionsSimilarity(msg)
-	}
-
-	if m.searchActive {
-		switch msg.String() {
-		case "esc", "down", "j":
-			m.searchActive = false
-			m.searchQuery = m.searchInput.Value()
-			m.searchInput.Blur()
-			m.cursor = 0
-			m.scrollOffset = 0
-			return m, nil
-		case "enter":
-			m.searchActive = false
-			m.searchQuery = m.searchInput.Value()
-			m.searchInput.Blur()
-			return m, nil
-		}
-
-		prev := m.searchInput.Value()
-		var cmd tea.Cmd
-		m.searchInput, cmd = m.searchInput.Update(msg)
-		if m.searchInput.Value() != prev {
-			m.searchQuery = m.searchInput.Value()
-			m.cursor = 0
-			m.scrollOffset = 0
-			m.clearRunResults()
-		}
-		return m, cmd
-	}
-
-	filtered := m.filteredResults()
-
-	switch msg.String() {
-	case "/":
-		m.searchActive = true
-		m.searchInput.Focus()
-		return m, textinput.Blink
-	case "esc":
-		if strings.TrimSpace(m.searchQuery) != "" {
-			m.searchQuery = ""
-			m.searchInput.SetValue("")
-			m.cursor = 0
-			m.scrollOffset = 0
-			m.clearRunResults()
-			return m, nil
-		}
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-		return m, nil
-	case "j", "down":
-		if m.cursor < len(filtered)-1 {
-			m.cursor++
-			if m.cursor >= m.scrollOffset+m.visibleRows {
-				m.scrollOffset++
-			}
-			m.clearRunResults()
-		}
-	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
-			if m.cursor < m.scrollOffset {
-				m.scrollOffset--
-			}
-			m.clearRunResults()
-		} else {
-			m.searchActive = true
-			m.searchInput.Focus()
-			return m, textinput.Blink
-		}
-	case "enter":
-		if len(filtered) > 0 {
-			m.currentView = ViewDetails
-			m.detailsTab = 0
-			m.detailScroll = 0
-			m.clearRunResults()
-			m.executor = nil
-		}
-	case "f":
-		m.filter = (m.filter + 1) % 4
-		m.cursor = 0
-		m.scrollOffset = 0
-	case "r":
-		return m.startRun()
-	case "e":
-		m.currentView = ViewExport
-		m.exportCursor = 0
-	case "q":
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-	}
-
-	return m, nil
-}
-
-func (m Model) updateSubmissionsSimilarity(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
-		m.currentView = ViewHome
-		m.results = nil
-		m.report = nil
-		m.resetPairDetailState()
-		m.similarityPairsByProcess = make(map[string][]SimilarityPair)
-		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
-		m.similarityErrorByProcess = make(map[string]string)
-		return m, nil
-	}
-
-	if len(m.similarityProcessNames) == 0 {
-		return m, nil
-	}
-
-	currentProc := m.currentSimilarityProcessName()
-	if currentProc != "" && m.similarityStateByProcess[currentProc] == SimilarityNotStarted {
-		return m, m.computeSimilarityForProcess(currentProc)
-	}
-
-	pairs := m.similarityPairsByProcess[currentProc]
-	dataRows := min(30, m.visibleRows-1)
-	if dataRows < 6 {
-		dataRows = 6
-	}
-
-	switch msg.String() {
-	case "j", "down":
-		if len(pairs) == 0 {
-			return m, nil
-		}
-		if m.similarityCursor < len(pairs)-1 {
-			m.similarityCursor++
-			if m.similarityCursor >= m.similarityScroll+dataRows {
-				m.similarityScroll++
-			}
-		}
-	case "k", "up":
-		if len(pairs) == 0 {
-			return m, nil
-		}
-		if m.similarityCursor > 0 {
-			m.similarityCursor--
-			if m.similarityCursor < m.similarityScroll {
-				m.similarityScroll--
-			}
-		}
-	case "l", "right":
-		if m.similaritySelectedProc < len(m.similarityProcessNames)-1 {
-			m.similaritySelectedProc++
-			m.similarityCursor = 0
-			m.similarityScroll = 0
-			proc := m.currentSimilarityProcessName()
-			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-				return m, m.computeSimilarityForProcess(proc)
-			}
-		}
-	case "h", "left":
-		if m.similaritySelectedProc > 0 {
-			m.similaritySelectedProc--
-			m.similarityCursor = 0
-			m.similarityScroll = 0
-			proc := m.currentSimilarityProcessName()
-			if proc != "" && m.similarityStateByProcess[proc] == SimilarityNotStarted {
-				return m, m.computeSimilarityForProcess(proc)
-			}
-		}
-	case "enter":
-		if len(pairs) == 0 || m.similarityCursor >= len(pairs) {
-			return m, nil
-		}
-		pair := pairs[m.similarityCursor]
-		srcFile := m.resolveSimilaritySourceFile(currentProc)
-		if srcFile == "" && len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
-			srcFile = m.results[0].Submission.CFiles[0]
-		}
-		if srcFile == "" {
-			return m, nil
-		}
-		pathA := filepath.Join(m.results[pair.AIndex].Submission.Path, srcFile)
-		pathB := filepath.Join(m.results[pair.BIndex].Submission.Path, srcFile)
-		m.resetPairDetailViewState()
-		m.pairDetailOpen = true
-		m.pairDetailProcess = currentProc
-		m.pairDetailPairIndex = m.similarityCursor
-		return m, loadPairDetailFiles(currentProc, m.similarityCursor, pathA, pathB, m.runID)
-	}
-	return m, nil
-}
-
-func loadPairDetailFiles(process string, pairIndex int, pathA, pathB string, runID int64) tea.Cmd {
-	return func() tea.Msg {
-		contentA, errA := os.ReadFile(pathA)
-		if errA != nil {
-			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: nil, contentB: nil, err: errA, runID: runID}
-		}
-		contentB, errB := os.ReadFile(pathB)
-		if errB != nil {
-			return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: nil, err: errB, runID: runID}
-		}
-		return pairDetailLoadedMsg{process: process, pairIndex: pairIndex, contentA: contentA, contentB: contentB, err: nil, runID: runID}
-	}
-}
-
-func (m Model) updateSubmissionsPairDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	pairs := m.similarityPairsByProcess[m.pairDetailProcess]
-	if m.pairDetailPairIndex >= len(pairs) {
-		m.resetPairDetailState()
-		return m, nil
-	}
-
-	const pairDetailMaxPaneHeight = 30
-	paneHeight := pairDetailMaxPaneHeight
-	if m.visibleRows < paneHeight {
-		paneHeight = m.visibleRows
-	}
-	if paneHeight < 8 {
-		paneHeight = 8
-	}
-
-	linesA := len(strings.Split(string(m.pairDetailContentA), "\n"))
-	linesB := len(strings.Split(string(m.pairDetailContentB), "\n"))
-	maxScrollA := max(0, linesA-paneHeight)
-	maxScrollB := max(0, linesB-paneHeight)
-	_, contentWidth := pairDetailPaneWidths(m.width)
-	maxHScrollA := max(0, maxDisplayWidthForContent(m.pairDetailContentA)-contentWidth)
-	maxHScrollB := max(0, maxDisplayWidthForContent(m.pairDetailContentB)-contentWidth)
-
-	switch msg.String() {
-	case "esc", "q":
-		m.pairDetailOpen = false
-		return m, nil
-	case "h":
-		m.pairDetailFocusedPane = 0
-		return m, nil
-	case "l":
-		m.pairDetailFocusedPane = 1
-		return m, nil
-	case "down":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailScrollA < maxScrollA {
-				m.pairDetailScrollA++
-			}
-		} else {
-			if m.pairDetailScrollB < maxScrollB {
-				m.pairDetailScrollB++
-			}
-		}
-	case "up":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailScrollA > 0 {
-				m.pairDetailScrollA--
-			}
-		} else {
-			if m.pairDetailScrollB > 0 {
-				m.pairDetailScrollB--
-			}
-		}
-	case "right":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailHScrollA < maxHScrollA {
-				m.pairDetailHScrollA++
-			}
-		} else {
-			if m.pairDetailHScrollB < maxHScrollB {
-				m.pairDetailHScrollB++
-			}
-		}
-	case "left":
-		if m.pairDetailFocusedPane == 0 {
-			if m.pairDetailHScrollA > 0 {
-				m.pairDetailHScrollA--
-			}
-		} else {
-			if m.pairDetailHScrollB > 0 {
-				m.pairDetailHScrollB--
-			}
-		}
-	}
-	return m, nil
-}
-
-func maxDisplayWidthForContent(content []byte) int {
-	if len(content) == 0 {
-		return 0
-	}
-	maxWidth := 0
-	for _, line := range strings.Split(string(content), "\n") {
-		line = components.SanitizeDisplay(line)
-		line = expandTabsForPane(line, pairDetailTabWidth)
-		if w := lipgloss.Width(line); w > maxWidth {
-			maxWidth = w
-		}
-	}
-	return maxWidth
-}
-
-func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	getBannedFuncCount := func() int {
-		filtered := m.filteredResults()
-		if m.cursor >= len(filtered) {
-			return 0
-		}
-		return len(filtered[m.cursor].Scan.HitsByFunction)
-	}
-
-	if m.detailsTab == 3 {
-		return m.updateRunTab(msg)
-	}
-
-	switch msg.String() {
-	case "tab":
-		m.detailsTab = (m.detailsTab + 1) % 4
-		m.detailScroll = 0
-		m.bannedCursor = 0
-		if m.detailsTab == 3 {
-			m.runInputFocused = 0
-			m.runArgsInput.Focus()
-			m.runStdinInput.Blur()
-		}
-	case "shift+tab":
-		m.detailsTab = (m.detailsTab + 3) % 4
-		m.detailScroll = 0
-		m.bannedCursor = 0
-		if m.detailsTab == 3 {
-			m.runInputFocused = 0
-			m.runArgsInput.Focus()
-			m.runStdinInput.Blur()
-		}
-	case "j", "down":
-		if m.detailsTab == 1 {
-			maxCursor := getBannedFuncCount() - 1
-			if maxCursor >= 0 && m.bannedCursor < maxCursor {
-				m.bannedCursor++
-			}
-		} else {
-			m.detailScroll++
-		}
-	case "k", "up":
-		if m.detailsTab == 1 {
-			if m.bannedCursor > 0 {
-				m.bannedCursor--
-			}
-		} else if m.detailScroll > 0 {
-			m.detailScroll--
-		}
-	case "enter", " ":
-		if m.detailsTab == 1 {
-			if m.expandedFuncs == nil {
-				m.expandedFuncs = make(map[string]bool)
-			}
-			filtered := m.filteredResults()
-			if m.cursor < len(filtered) {
-				r := filtered[m.cursor]
-				var funcNames []string
-				for fn := range r.Scan.HitsByFunction {
-					funcNames = append(funcNames, fn)
-				}
-				sort.Strings(funcNames)
-				if m.bannedCursor < len(funcNames) {
-					fn := funcNames[m.bannedCursor]
-					m.expandedFuncs[fn] = !m.expandedFuncs[fn]
-				}
-			}
-		}
-	case "q", "esc":
-		m.currentView = ViewSubmissions
-		m.expandedFuncs = nil
-		m.bannedCursor = 0
-		m.clearRunResults()
-	}
-	return m, nil
-}
-
-func (m Model) updateRunTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.isExecuting {
-		switch msg.String() {
-		case "ctrl+k", "K":
-			if m.runCancelFunc != nil {
-				m.runCancelFunc()
-				m.runCancelFunc = nil
-			}
-			m.isExecuting = false
-			m.statusMsg = "Processes killed (SIGKILL)"
-			return m, nil
-		}
-		return m, nil
-	}
-
+	// Determine if multi-process mode
 	isMultiProcess := false
-	var mp *policy.MultiProcessConfig
+	var testCases []policy.TestCase
+	var testScenarios []policy.MultiProcessScenario
+	var multiProcessExecs []policy.ProcessConfig
+
 	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-		mp = m.policies[m.selectedPolicy].Run.MultiProcess
-		if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
+		p := m.policies[m.selectedPolicy]
+		testCases = p.Run.TestCases
+		if mp := p.Run.MultiProcess; mp != nil && mp.Enabled && len(mp.Executables) > 0 {
 			isMultiProcess = true
+			testScenarios = mp.TestScenarios
+			multiProcessExecs = mp.Executables
 		}
 	}
 
-	if isMultiProcess {
-		scenarioCount := len(mp.TestScenarios)
-		maxFocus := scenarioCount
-
-		if m.multiProcessResult != nil && m.selectedProcessIdx >= 0 {
-			numProcs := len(m.multiProcessResult.Order)
-			maxScroll := 0
-			if m.selectedProcessIdx < numProcs {
-				procName := m.multiProcessResult.Order[m.selectedProcessIdx]
-				proc := m.multiProcessResult.Processes[procName]
-
-				boxWidth := (m.width - 20) / 2
-				if boxWidth < 30 {
-					boxWidth = 30
-				}
-				contentWidth := boxWidth - 4
-
-				var outputLen int
-				if proc.OutputMatch == domain.OutputMatchFail && len(proc.OutputDiff) > 0 {
-					outputLen = len(proc.OutputDiff)
-					if proc.Stderr != "" {
-						outputLen++
-						outputLen++
-						outputLen += len(components.WrapLines(proc.Stderr, contentWidth))
-					}
-				} else {
-					allOutput := proc.Stdout
-					if proc.Stderr != "" {
-						if allOutput != "" {
-							allOutput += "\nstderr:\n" + proc.Stderr
-						} else {
-							allOutput = "stderr:\n" + proc.Stderr
-						}
-					}
-					outputLen = len(components.WrapLines(allOutput, contentWidth))
-				}
-				maxScroll = outputLen - 8
-				if maxScroll < 0 {
-					maxScroll = 0
-				}
-			}
-
-			switch msg.String() {
-			case "up", "k":
-				if m.outputScroll > 0 {
-					m.outputScroll--
-				}
-				return m, nil
-			case "down", "j":
-				if m.outputScroll < maxScroll {
-					m.outputScroll++
-				}
-				return m, nil
-			case "esc", "enter":
-				m.selectedProcessIdx = -1
-				m.outputScroll = 0
-				return m, nil
-			}
-			return m, nil
-		}
-
-		if m.multiProcessResult != nil && len(m.multiProcessResult.Order) > 0 {
-			numProcs := len(m.multiProcessResult.Order)
-			processStartIdx := 1 + scenarioCount
-
-			switch msg.String() {
-			case "tab":
-				m.detailsTab = 0
-				m.detailScroll = 0
-				return m, nil
-
-			case "shift+tab":
-				m.detailsTab = 2
-				m.detailScroll = 0
-				return m, nil
-
-			case "down", "j":
-				maxIdx := processStartIdx + numProcs - 1
-				if m.runInputFocused < maxIdx {
-					m.runInputFocused++
-				}
-				return m, nil
-
-			case "up", "k":
-				if m.runInputFocused > 0 {
-					m.runInputFocused--
-				}
-				return m, nil
-
-			case "enter":
-				if m.runInputFocused == 0 {
-					return m, m.executeMultiProcess()
-				} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
-					return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
-				} else if m.runInputFocused >= processStartIdx {
-					m.selectedProcessIdx = m.runInputFocused - processStartIdx
-					m.outputScroll = 0
-					return m, nil
-				}
-
-			case "m":
-				return m, m.executeMultiProcess()
-
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(msg.String()[0] - '1')
-				if idx >= 0 && idx < scenarioCount {
-					return m, m.executeMultiProcessScenario(idx)
-				}
-
-			case "esc", "q":
-				m.currentView = ViewSubmissions
-				m.expandedFuncs = nil
-				m.multiProcessResult = nil
-				m.showMultiProcess = false
-				return m, nil
-			}
-			return m, nil
-		}
-
-		switch msg.String() {
-		case "tab":
-			m.detailsTab = 0
-			m.detailScroll = 0
-			return m, nil
-
-		case "shift+tab":
-			m.detailsTab = 2
-			m.detailScroll = 0
-			return m, nil
-
-		case "down", "j":
-			if m.runInputFocused < maxFocus {
-				m.runInputFocused++
-			}
-			return m, nil
-
-		case "up", "k":
-			if m.runInputFocused > 0 {
-				m.runInputFocused--
-			}
-			return m, nil
-
-		case "enter":
-			if m.runInputFocused == 0 {
-				return m, m.executeMultiProcess()
-			} else if m.runInputFocused > 0 && m.runInputFocused <= scenarioCount {
-				return m, m.executeMultiProcessScenario(m.runInputFocused - 1)
-			}
-
-		case "m":
-			return m, m.executeMultiProcess()
-
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(msg.String()[0] - '1')
-			if idx >= 0 && idx < scenarioCount {
-				return m, m.executeMultiProcessScenario(idx)
-			}
-
-		case "esc", "q":
-			m.currentView = ViewSubmissions
-			m.expandedFuncs = nil
-			m.multiProcessResult = nil
-			m.showMultiProcess = false
-			return m, nil
-		}
-
-		return m, nil
+	return details.State{
+		Width:              m.width,
+		Height:             m.height,
+		Result:             result,
+		SubmissionID:       submissionID,
+		DetailsTab:         m.detailsTab,
+		DetailScroll:       m.detailScroll,
+		BannedCursor:       m.bannedCursor,
+		ExpandedFuncs:      m.expandedFuncs,
+		RunInputFocused:    m.runInputFocused,
+		SelectedProcessIdx: m.selectedProcessIdx,
+		OutputScroll:       m.outputScroll,
+		IsExecuting:        m.isExecuting,
+		SpinnerView:        m.spinner.View(),
+		RunArgsInput:       m.runArgsInput,
+		RunStdinInput:      m.runStdinInput,
+		RunResult:          m.runResult,
+		RunTestResults:     m.runTestResults,
+		MultiProcessResult: m.multiProcessResult,
+		ShowMultiProcess:   m.showMultiProcess,
+		IsMultiProcess:     isMultiProcess,
+		TestCases:          testCases,
+		TestScenarios:      testScenarios,
+		MultiProcessExecs:  multiProcessExecs,
+		KeepBinaries:       m.settings.KeepBinaries,
 	}
+}
 
-	testCaseCount := 0
-	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
-		testCaseCount = len(m.policies[m.selectedPolicy].Run.TestCases)
-	}
+func (m Model) applyDetailsResult(result details.UpdateResult) (tea.Model, tea.Cmd) {
+	m.detailsTab = result.DetailsTab
+	m.detailScroll = result.DetailScroll
+	m.bannedCursor = result.BannedCursor
+	m.expandedFuncs = result.ExpandedFuncs
+	m.runInputFocused = result.RunInputFocused
+	m.selectedProcessIdx = result.SelectedProcessIdx
+	m.outputScroll = result.OutputScroll
+	m.showMultiProcess = result.ShowMultiProcess
+	m.runArgsInput = result.RunArgsInput
+	m.runStdinInput = result.RunStdinInput
 
-	maxFocus := 2 + testCaseCount
-	outputBoxIdx := maxFocus + 1
-
-	if m.runResult != nil && m.selectedProcessIdx >= 0 {
-		// Calculate content width same as view
-		boxWidth := m.width - 14
-		if boxWidth < 40 {
-			boxWidth = 40
-		}
-		contentWidth := boxWidth - 4
-
-		var outputLen int
-		if m.runResult.OutputMatch == domain.OutputMatchFail && len(m.runResult.OutputDiff) > 0 {
-			outputLen = len(m.runResult.OutputDiff)
-			if m.runResult.Stderr != "" {
-				outputLen++
-				outputLen++
-				outputLen += len(components.WrapLines(m.runResult.Stderr, contentWidth))
-			}
-		} else {
-			allOutput := m.runResult.Stdout
-			if m.runResult.Stderr != "" {
-				if allOutput != "" {
-					allOutput += "\nstderr:\n" + m.runResult.Stderr
-				} else {
-					allOutput = "stderr:\n" + m.runResult.Stderr
-				}
-			}
-			outputLen = len(components.WrapLines(allOutput, contentWidth))
-		}
-		maxScroll := outputLen - 15
-		if maxScroll < 0 {
-			maxScroll = 0
-		}
-
-		switch msg.String() {
-		case "up", "k":
-			if m.outputScroll > 0 {
-				m.outputScroll--
-			}
-			return m, nil
-		case "down", "j":
-			if m.outputScroll < maxScroll {
-				m.outputScroll++
-			}
-			return m, nil
-		case "esc", "enter":
-			m.selectedProcessIdx = -1
-			m.outputScroll = 0
-			m.runInputFocused = outputBoxIdx
-			return m, nil
-		}
-		return m, nil
-	}
-
-	switch msg.String() {
-	case "tab":
-		m.detailsTab = 0
-		m.detailScroll = 0
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		return m, nil
-
-	case "shift+tab":
-		m.detailsTab = 2
-		m.detailScroll = 0
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		return m, nil
-
-	case "down", "j":
-		maxIdx := maxFocus
-		if m.runResult != nil {
-			maxIdx = outputBoxIdx
-		}
-		if m.runInputFocused < maxIdx {
-			m.runInputFocused++
-		}
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		if m.runInputFocused == 0 {
-			m.runArgsInput.Focus()
-		} else if m.runInputFocused == 1 {
-			m.runStdinInput.Focus()
-		}
-		return m, nil
-
-	case "up", "k":
-		if m.runInputFocused > 0 {
-			m.runInputFocused--
-		}
-		m.runArgsInput.Blur()
-		m.runStdinInput.Blur()
-		if m.runInputFocused == 0 {
-			m.runArgsInput.Focus()
-		} else if m.runInputFocused == 1 {
-			m.runStdinInput.Focus()
-		}
-		return m, nil
-
-	case "enter":
-		if m.runResult != nil && m.runInputFocused == outputBoxIdx {
-			m.selectedProcessIdx = 0
-			m.outputScroll = 0
-			return m, nil
-		}
-		if m.runInputFocused == 2 {
-			return m, m.executeSubmission()
-		} else if m.runInputFocused > 2 && m.runInputFocused <= maxFocus {
-			testIdx := m.runInputFocused - 3
-			return m, m.executeTestCase(testIdx)
-		}
-
-	case "r":
-		if m.runInputFocused >= 2 {
-			return m, m.executeSubmission()
-		}
-
-	case "esc", "q":
+	if result.GoBack {
 		m.currentView = ViewSubmissions
 		m.expandedFuncs = nil
+		m.bannedCursor = 0
 		m.clearRunResults()
 		m.runArgsInput.Blur()
 		m.runStdinInput.Blur()
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	if m.runInputFocused == 0 {
-		m.runArgsInput, cmd = m.runArgsInput.Update(msg)
-	} else if m.runInputFocused == 1 {
-		m.runStdinInput, cmd = m.runStdinInput.Update(msg)
+	if result.CancelExecution {
+		if m.runCancelFunc != nil {
+			m.runCancelFunc()
+			m.runCancelFunc = nil
+		}
+		m.isExecuting = false
+		m.statusMsg = "Processes killed (SIGKILL)"
+		return m, nil
 	}
 
-	return m, cmd
-}
-
-func (m Model) updateExport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		if m.exportCursor < 1 { // Only 2 options: JSON (0) and CSV (1)
-			m.exportCursor++
-		}
-	case "k", "up":
-		if m.exportCursor > 0 {
-			m.exportCursor--
-		}
-	case "enter":
-		if m.report != nil {
-			return m, m.doExport()
-		}
-	case "q", "esc":
-		m.currentView = ViewSubmissions
-	}
-	return m, nil
-}
-
-func (m Model) updateBannedEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.bannedEditing {
-		switch msg.String() {
-		case "enter":
-			newVal := strings.TrimSpace(m.bannedInput.Value())
-			if newVal != "" && m.bannedCursorEdit < len(m.bannedList) {
-				m.bannedList[m.bannedCursorEdit] = newVal
-			}
-			m.bannedEditing = false
-			m.bannedInput.Blur()
-			return m, nil
-		case "esc":
-			m.bannedEditing = false
-			m.bannedInput.Blur()
-			return m, nil
-		default:
-			var cmd tea.Cmd
-			m.bannedInput, cmd = m.bannedInput.Update(msg)
-			return m, cmd
-		}
+	if result.ExecuteSubmission {
+		return m, m.executeSubmission()
 	}
 
-	switch msg.String() {
-	case "j", "down":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList)-1 {
-			m.bannedCursorEdit++
-		}
-	case "k", "up":
-		if m.bannedCursorEdit > 0 {
-			m.bannedCursorEdit--
-		}
-	case "enter", "e":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList) {
-			m.bannedEditing = true
-			m.bannedInput.SetValue(m.bannedList[m.bannedCursorEdit])
-			m.bannedInput.Focus()
-			return m, textinput.Blink
-		}
-	case "a":
-		m.bannedList = append(m.bannedList, "new_function")
-		m.bannedCursorEdit = len(m.bannedList) - 1
-		m.bannedEditing = true
-		m.bannedInput.SetValue("new_function")
-		m.bannedInput.Focus()
-		return m, textinput.Blink
-	case "d", "backspace":
-		if len(m.bannedList) > 0 && m.bannedCursorEdit < len(m.bannedList) {
-			m.bannedList = append(m.bannedList[:m.bannedCursorEdit], m.bannedList[m.bannedCursorEdit+1:]...)
-			if m.bannedCursorEdit >= len(m.bannedList) && m.bannedCursorEdit > 0 {
-				m.bannedCursorEdit--
-			}
-		}
-	case "s", "ctrl+s":
-		return m, m.saveBannedList()
-	case "q", "esc":
-		m.currentView = ViewPolicyManage
-		return m, m.saveBannedList()
+	if result.ExecuteTestCase >= 0 {
+		return m, m.executeTestCase(result.ExecuteTestCase)
 	}
-	return m, nil
+
+	if result.ExecuteMultiProcess {
+		return m, m.executeMultiProcess()
+	}
+
+	if result.ExecuteScenario >= 0 {
+		return m, m.executeMultiProcessScenario(result.ExecuteScenario)
+	}
+
+	return m, result.Cmd
 }
 
 func (m *Model) loadPolicies() tea.Cmd {
@@ -1420,69 +750,6 @@ func (m Model) saveBannedList() tea.Cmd {
 	}
 }
 
-func (m *Model) initSimilarityProcesses() {
-	m.similarityProcessNames = nil
-	m.similaritySelectedProc = 0
-
-	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
-		return
-	}
-
-	pol := m.policies[m.selectedPolicy]
-	mp := pol.Run.MultiProcess
-	if mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-		for _, proc := range mp.Executables {
-			m.similarityProcessNames = append(m.similarityProcessNames, proc.Name)
-		}
-	} else {
-		name := pol.Compile.SourceFile
-		if name == "" {
-			name = "main"
-		}
-		m.similarityProcessNames = []string{name}
-	}
-
-	if m.similarityStateByProcess == nil {
-		m.similarityStateByProcess = make(map[string]SimilarityComputeState)
-	}
-	if m.similarityErrorByProcess == nil {
-		m.similarityErrorByProcess = make(map[string]string)
-	}
-	if m.similarityInFlight == nil {
-		m.similarityInFlight = make(map[string]bool)
-	}
-	for _, p := range m.similarityProcessNames {
-		m.similarityStateByProcess[p] = SimilarityNotStarted
-	}
-}
-
-func (m Model) currentSimilarityProcessName() string {
-	if len(m.similarityProcessNames) == 0 {
-		return ""
-	}
-	if m.similaritySelectedProc < 0 || m.similaritySelectedProc >= len(m.similarityProcessNames) {
-		return m.similarityProcessNames[0]
-	}
-	return m.similarityProcessNames[m.similaritySelectedProc]
-}
-
-func (m Model) resolveSimilaritySourceFile(process string) string {
-	if m.selectedPolicy < 0 || m.selectedPolicy >= len(m.policies) {
-		return ""
-	}
-
-	pol := m.policies[m.selectedPolicy]
-	if mp := pol.Run.MultiProcess; mp != nil && mp.Enabled && len(mp.Executables) > 0 {
-		for _, proc := range mp.Executables {
-			if proc.Name == process {
-				return proc.SourceFile
-			}
-		}
-		return ""
-	}
-	return pol.Compile.SourceFile
-}
-
 func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 	if m.report == nil || len(m.results) == 0 {
 		return nil
@@ -1506,7 +773,11 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 		return nil
 	}
 
-	srcFile := m.resolveSimilaritySourceFile(process)
+	var currentPolicy *policy.Policy
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		currentPolicy = m.policies[m.selectedPolicy]
+	}
+	srcFile := submissions.ResolveSourceFile(currentPolicy, process)
 	if srcFile == "" {
 		if len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
 			srcFile = m.results[0].Submission.CFiles[0]
@@ -1548,43 +819,6 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 	)
 }
 
-func (m Model) filteredResults() []domain.SubmissionResult {
-	if m.results == nil {
-		return nil
-	}
-
-	var filtered []domain.SubmissionResult
-	query := strings.ToLower(strings.TrimSpace(m.searchQuery))
-	for _, r := range m.results {
-		switch m.filter {
-		case FilterFailed:
-			if !r.Compile.OK {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		case FilterBanned:
-			if r.Scan.TotalHits() > 0 {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		case FilterClean:
-			if r.Status == domain.StatusClean {
-				if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-					filtered = append(filtered, r)
-				}
-			}
-		default:
-			if query == "" || strings.Contains(strings.ToLower(r.Submission.ID), query) {
-				filtered = append(filtered, r)
-			}
-		}
-	}
-
-	return filtered
-}
-
 func (m *Model) getExecutor() *engine.Executor {
 	if m.executor != nil {
 		return m.executor
@@ -1611,7 +845,7 @@ func (m *Model) getExecutor() *engine.Executor {
 }
 
 func (m *Model) executeSubmission() tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1648,7 +882,7 @@ func (m *Model) executeSubmission() tea.Cmd {
 }
 
 func (m Model) executeTestCase(testIdx int) tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1684,7 +918,7 @@ func (m Model) executeTestCase(testIdx int) tea.Cmd {
 }
 
 func (m *Model) executeMultiProcess() tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}
@@ -1733,7 +967,7 @@ func (m *Model) executeMultiProcess() tea.Cmd {
 }
 
 func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
-	filtered := m.filteredResults()
+	filtered := submissions.FilterResults(m.results, int(m.filter), m.searchQuery)
 	if m.cursor >= len(filtered) {
 		return nil
 	}

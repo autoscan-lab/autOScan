@@ -2,16 +2,30 @@ package components
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/tui/styles"
 )
 
 const tabWidth = 8
 
-var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+var ansiRegexp = regexp.MustCompile(`\x1b\\[[0-9;?]*[A-Za-z]`)
+
+type Toggle struct {
+	Label       string
+	Description string
+	Value       bool
+	Focused     bool
+}
+
+type NumberSetting struct {
+	Label       string
+	Value       string
+	Description []string
+	Focused     bool
+}
 
 func SanitizeDisplay(s string) string {
 	if s == "" {
@@ -55,8 +69,6 @@ func expandTabs(s string, width int) string {
 	return b.String()
 }
 
-// TruncateToWidth truncates a string to fit within maxWidth display columns.
-// Uses lipgloss.Width for accurate display width calculation.
 func TruncateToWidth(s string, maxWidth int) string {
 	s = SanitizeDisplay(s)
 	s = expandTabs(s, tabWidth)
@@ -149,18 +161,11 @@ func FocusPrefix(focused bool) string {
 }
 
 func RenderMenuItem(text string, selected bool) string {
-	style := styles.NormalItem
+	style := NormalItem
 	if selected {
-		style = styles.SelectedItem
+		style = SelectedItem
 	}
 	return CursorPrefix(selected) + style.Render(text)
-}
-
-type Toggle struct {
-	Label       string
-	Description string
-	Value       bool
-	Focused     bool
 }
 
 func (t *Toggle) View() string {
@@ -169,20 +174,20 @@ func (t *Toggle) View() string {
 		checkbox = "[✓]"
 	}
 
-	checkStyle := styles.SuccessText
+	checkStyle := SuccessText
 	if !t.Value {
-		checkStyle = styles.SubtleText
+		checkStyle = SubtleText
 	}
 
-	labelStyle := styles.NormalItem
+	labelStyle := NormalItem
 	if t.Focused {
-		labelStyle = styles.SelectedItem
+		labelStyle = SelectedItem
 	}
 
 	line := fmt.Sprintf("  %s %s", checkStyle.Render(checkbox), labelStyle.Render(t.Label))
 
 	if t.Description != "" {
-		line += "\n" + styles.SubtleText.Render("      "+t.Description)
+		line += "\n" + SubtleText.Render("      "+t.Description)
 	}
 
 	return line
@@ -192,9 +197,72 @@ func ConfirmDialog(message string) string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(styles.WarningText.Render(message))
+	b.WriteString(WarningText.Render(message))
 	b.WriteString("\n")
-	b.WriteString(styles.SubtleText.Render("[y] confirm  [n] cancel"))
+	b.WriteString(SubtleText.Render("[y] confirm  [n] cancel"))
 
 	return b.String()
+}
+
+func (ns NumberSetting) View() string {
+	var b strings.Builder
+
+	line := fmt.Sprintf("  %s: %s", ns.Label, ns.Value)
+	if ns.Focused {
+		b.WriteString(SelectedItem.Render(line))
+	} else {
+		b.WriteString(NormalItem.Render(line))
+	}
+
+	for _, desc := range ns.Description {
+		b.WriteString("\n")
+		b.WriteString(SubtleText.Render("      " + desc))
+	}
+
+	return b.String()
+}
+
+func RenderHeader(title string) string {
+	return HeaderStyle.Render(title) + "\n\n"
+}
+
+func TruncatePathToFilename(s string) string {
+	if strings.Contains(s, "/") && !strings.HasPrefix(s, "-") {
+		return filepath.Base(s)
+	}
+	return s
+}
+
+func TruncatePathsInText(text string) string {
+	result := text
+	parts := strings.Split(result, "/")
+	if len(parts) > 1 {
+		result = truncateAbsolutePaths(result)
+	}
+	return result
+}
+
+func truncateAbsolutePaths(text string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(text) {
+		if text[i] == '/' && i+1 < len(text) && (text[i+1] == 'U' || text[i+1] == 'h' || text[i+1] == 'v' || text[i+1] == 't') {
+			pathEnd := i + 1
+			for pathEnd < len(text) && text[pathEnd] != ' ' && text[pathEnd] != ':' && text[pathEnd] != '\n' && text[pathEnd] != ')' && text[pathEnd] != '(' {
+				pathEnd++
+			}
+			if pathEnd > i+1 {
+				pathStr := text[i:pathEnd]
+				if strings.Count(pathStr, "/") > 2 {
+					filename := filepath.Base(pathStr)
+					result.WriteString(filename)
+					i = pathEnd
+					continue
+				}
+			}
+		}
+		result.WriteByte(text[i])
+		i++
+	}
+	return result.String()
 }

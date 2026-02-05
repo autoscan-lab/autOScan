@@ -1,4 +1,4 @@
-package tui
+package policy
 
 import (
 	"fmt"
@@ -12,14 +12,13 @@ import (
 	"github.com/feli05/autoscan/internal/config"
 	"github.com/feli05/autoscan/internal/policy"
 	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/styles"
 	"gopkg.in/yaml.v3"
 )
 
-type PolicyEditorField int
+type EditorField int
 
 const (
-	FieldName PolicyEditorField = iota
+	FieldName EditorField = iota
 	FieldFlags
 	FieldLibraryFiles
 	FieldTestFiles
@@ -32,7 +31,11 @@ const (
 	FieldCancel
 )
 
-type PolicyEditor struct {
+type DeleteErrorMsg struct {
+	Err error
+}
+
+type Editor struct {
 	isNew    bool
 	filePath string
 	width    int
@@ -109,11 +112,11 @@ type PolicyEditor struct {
 		focusedIdx      int
 	}
 
-	focusedField PolicyEditorField
-	errorMsg     string
+	focusedField EditorField
+	ErrorMsg     string
 }
 
-func NewPolicyEditor(width, height int) PolicyEditor {
+func NewEditor(width, height int) Editor {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "Lab 01 - Introduction"
 	nameInput.CharLimit = 100
@@ -178,7 +181,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	scenarioNameInput.CharLimit = 50
 	scenarioNameInput.Width = 40
 
-	pe := PolicyEditor{
+	pe := Editor{
 		isNew:             true,
 		nameInput:         nameInput,
 		flagsInput:        flagsInput,
@@ -211,7 +214,7 @@ func NewPolicyEditor(width, height int) PolicyEditor {
 	return pe
 }
 
-func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
+func (e *Editor) LoadPolicy(p *policy.Policy) {
 	e.isNew = false
 	e.filePath = p.FilePath
 
@@ -246,15 +249,15 @@ func (e *PolicyEditor) LoadPolicy(p *policy.Policy) {
 	e.testScenariosCursor = 0
 }
 
-func (e *PolicyEditor) SetWidth(w int) {
+func (e *Editor) SetWidth(w int) {
 	e.width = w
 }
 
-func (e *PolicyEditor) Reset() {
+func (e *Editor) Reset() {
 	e.isNew = true
 	e.filePath = ""
 	e.focusedField = FieldName
-	e.errorMsg = ""
+	e.ErrorMsg = ""
 	e.browsingForLibs = false
 	e.showingExistingLibs = false
 	e.existingLibs = nil
@@ -298,7 +301,7 @@ func (e *PolicyEditor) Reset() {
 	e.resetScenarioInputs()
 }
 
-func (e *PolicyEditor) resetTestCaseInputs() {
+func (e *Editor) resetTestCaseInputs() {
 	e.testCaseInputs.name.SetValue("")
 	e.testCaseInputs.args.SetValue("")
 	e.testCaseInputs.input.SetValue("")
@@ -311,7 +314,7 @@ func (e *PolicyEditor) resetTestCaseInputs() {
 	e.testCaseInputs.expectedExit.Blur()
 }
 
-func (e *PolicyEditor) resetProcessInputs() {
+func (e *Editor) resetProcessInputs() {
 	e.processInputs.name.SetValue("")
 	e.processInputs.sourceFile.SetValue("")
 	e.processInputs.args.SetValue("")
@@ -321,10 +324,10 @@ func (e *PolicyEditor) resetProcessInputs() {
 	e.processInputs.sourceFile.Blur()
 	e.processInputs.args.Blur()
 	e.processInputs.delayMs.Blur()
-	e.errorMsg = ""
+	e.ErrorMsg = ""
 }
 
-func (e *PolicyEditor) resetScenarioInputs() {
+func (e *Editor) resetScenarioInputs() {
 	e.scenarioInputs.name.SetValue("")
 	e.scenarioInputs.name.Focus()
 	e.scenarioInputs.focusedIdx = 0
@@ -335,7 +338,7 @@ func (e *PolicyEditor) resetScenarioInputs() {
 	e.scenarioExpectedOutputProcess = ""
 }
 
-func (e *PolicyEditor) initScenarioProcessInputs() {
+func (e *Editor) initScenarioProcessInputs() {
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
 	e.scenarioInputs.processExit = make(map[string]textinput.Model)
@@ -364,7 +367,7 @@ func (e *PolicyEditor) initScenarioProcessInputs() {
 	}
 }
 
-func (e *PolicyEditor) blurAllScenarioInputs() {
+func (e *Editor) blurAllScenarioInputs() {
 	e.scenarioInputs.name.Blur()
 	for name := range e.scenarioInputs.processArgs {
 		input := e.scenarioInputs.processArgs[name]
@@ -383,7 +386,7 @@ func (e *PolicyEditor) blurAllScenarioInputs() {
 	}
 }
 
-func (e *PolicyEditor) focusCurrentScenarioInput() {
+func (e *Editor) focusCurrentScenarioInput() {
 	numProcesses := len(e.multiProcessExecs)
 	totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
 
@@ -418,7 +421,7 @@ func (e *PolicyEditor) focusCurrentScenarioInput() {
 	}
 }
 
-func (e *PolicyEditor) loadExistingTestFiles() {
+func (e *Editor) loadExistingTestFiles() {
 	e.existingTests = nil
 	testDir, err := config.TestFilesDir()
 	if err != nil {
@@ -448,7 +451,7 @@ func (e *PolicyEditor) loadExistingTestFiles() {
 	}
 }
 
-func (e *PolicyEditor) loadExistingExpectedOutputs() {
+func (e *Editor) loadExistingExpectedOutputs() {
 	e.existingExpectedOutputs = nil
 	expDir, err := config.ExpectedOutputsDir()
 	if err != nil {
@@ -468,7 +471,7 @@ func (e *PolicyEditor) loadExistingExpectedOutputs() {
 	}
 }
 
-func (e *PolicyEditor) copyToExpectedOutputs(selectedPath string) (string, bool) {
+func (e *Editor) copyToExpectedOutputs(selectedPath string) (string, bool) {
 	filename := filepath.Base(selectedPath)
 	expDir, err := config.EnsureExpectedOutputsDir()
 	if err != nil {
@@ -485,7 +488,7 @@ func (e *PolicyEditor) copyToExpectedOutputs(selectedPath string) (string, bool)
 	return filename, true
 }
 
-func (e *PolicyEditor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *int, set func(string), close func()) {
+func (e *Editor) handleExistingPicker(msg tea.KeyMsg, items []string, cursor *int, set func(string), close func()) {
 	switch msg.String() {
 	case "esc":
 		close()
@@ -505,60 +508,59 @@ func (e *PolicyEditor) handleExistingPicker(msg tea.KeyMsg, items []string, curs
 	}
 }
 
-func (e *PolicyEditor) renderBrowsePicker(title, subtitle string, useBox bool) string {
+func (e *Editor) renderBrowsePicker(title, subtitle string, useBox bool) string {
 	var b strings.Builder
-	b.WriteString(styles.HeaderStyle.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader(title))
 
 	if useBox {
-		box := styles.BoxStyle(60)
+		box := components.BoxStyle(60)
 		var content strings.Builder
 		if subtitle != "" {
-			content.WriteString(styles.SubtleText.Render(subtitle))
+			content.WriteString(components.SubtleText.Render(subtitle))
 			content.WriteString("\n\n")
 		}
 		content.WriteString(e.folderBrowser.View())
 		b.WriteString(box.Render(content.String()))
 	} else {
 		if subtitle != "" {
-			b.WriteString(styles.SubtleText.Render(subtitle))
+			b.WriteString(components.SubtleText.Render(subtitle))
 			b.WriteString("\n\n")
 		}
 		b.WriteString(e.folderBrowser.View())
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  enter select  •  esc cancel"))
+	b.WriteString(components.SubtleText.Render("  enter select  •  esc cancel"))
 	return b.String()
 }
 
-func (e *PolicyEditor) renderInputRow(label string, focused bool, input textinput.Model, hint string) string {
+func (e *Editor) renderInputRow(label string, focused bool, input textinput.Model, hint string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
 	b.WriteString(input.View())
 	if hint != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.SubtleText.Render(hint))
+		b.WriteString(components.SubtleText.Render(hint))
 	}
 	b.WriteString("\n\n")
 	return b.String()
 }
 
-func (e *PolicyEditor) renderValueRow(label string, focused bool, value, empty string) string {
+func (e *Editor) renderValueRow(label string, focused bool, value, empty string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
 	if value != "" {
-		b.WriteString(styles.SuccessText.Render(value))
+		b.WriteString(components.SuccessText.Render(value))
 	} else {
-		b.WriteString(styles.SubtleText.Render(empty))
+		b.WriteString(components.SubtleText.Render(empty))
 	}
 	b.WriteString("\n\n")
 	return b.String()
 }
 
-func (e *PolicyEditor) renderInputRowTight(label string, focused bool, input textinput.Model) string {
+func (e *Editor) renderInputRowTight(label string, focused bool, input textinput.Model) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
@@ -567,33 +569,32 @@ func (e *PolicyEditor) renderInputRowTight(label string, focused bool, input tex
 	return b.String()
 }
 
-func (e *PolicyEditor) renderValueRowTight(label string, focused bool, value, empty string) string {
+func (e *Editor) renderValueRowTight(label string, focused bool, value, empty string) string {
 	var b strings.Builder
 	b.WriteString(components.FocusPrefix(focused))
 	b.WriteString(label)
 	if value != "" {
-		b.WriteString(styles.SuccessText.Render(value))
+		b.WriteString(components.SuccessText.Render(value))
 	} else {
-		b.WriteString(styles.SubtleText.Render(empty))
+		b.WriteString(components.SubtleText.Render(empty))
 	}
 	b.WriteString("\n")
 	return b.String()
 }
 
-func (e *PolicyEditor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
+func (e *Editor) renderExistingPicker(title, subtitle, emptyMsg string, items []string, cursor, boxWidth, maxVisible int, showCount bool) string {
 	var b strings.Builder
-	b.WriteString(styles.HeaderStyle.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString(components.RenderHeader(title))
 
-	box := styles.BoxStyle(boxWidth)
+	box := components.BoxStyle(boxWidth)
 	var content strings.Builder
 	if subtitle != "" {
-		content.WriteString(styles.SubtleText.Render(subtitle))
+		content.WriteString(components.SubtleText.Render(subtitle))
 		content.WriteString("\n\n")
 	}
 
 	if len(items) == 0 {
-		content.WriteString(styles.SubtleText.Render(emptyMsg))
+		content.WriteString(components.SubtleText.Render(emptyMsg))
 		if !strings.HasSuffix(emptyMsg, "\n") {
 			content.WriteString("\n")
 		}
@@ -602,23 +603,23 @@ func (e *PolicyEditor) renderExistingPicker(title, subtitle, emptyMsg string, it
 		for i := start; i < end; i++ {
 			item := items[i]
 			if i == cursor {
-				content.WriteString("> " + styles.SelectedItem.Render(item) + "\n")
+				content.WriteString("> " + components.SelectedItem.Render(item) + "\n")
 			} else {
-				content.WriteString("  " + styles.NormalItem.Render(item) + "\n")
+				content.WriteString("  " + components.NormalItem.Render(item) + "\n")
 			}
 		}
 		if showCount && len(items) > maxVisible {
-			content.WriteString(styles.SubtleText.Render(fmt.Sprintf("\n  [%d-%d of %d]\n", start+1, end, len(items))))
+			content.WriteString(components.SubtleText.Render(fmt.Sprintf("\n  [%d-%d of %d]\n", start+1, end, len(items))))
 		}
 	}
 
 	b.WriteString(box.Render(content.String()))
 	b.WriteString("\n\n")
-	b.WriteString(styles.SubtleText.Render("  ↑↓ navigate  •  enter select  •  esc cancel"))
+	b.WriteString(components.SubtleText.Render("  ↑↓ navigate  •  enter select  •  esc cancel"))
 	return b.String()
 }
 
-func (e *PolicyEditor) loadExistingLibraries() {
+func (e *Editor) loadExistingLibraries() {
 	e.existingLibs = nil
 	libDir, err := config.LibrariesDir()
 	if err != nil {
@@ -650,7 +651,7 @@ func (e *PolicyEditor) loadExistingLibraries() {
 	}
 }
 
-func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
+func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	// ─── SUB-MODE: Existing libraries picker ───
 	if e.showingExistingLibs {
 		switch msg := msg.(type) {
@@ -1542,7 +1543,7 @@ func (e *PolicyEditor) Update(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (e *PolicyEditor) nextField() {
+func (e *Editor) nextField() {
 	e.blurAll()
 	e.focusedField++
 	e.focusedField = e.adjustFieldForMode(e.focusedField, true)
@@ -1552,7 +1553,7 @@ func (e *PolicyEditor) nextField() {
 	e.focusCurrent()
 }
 
-func (e *PolicyEditor) prevField() {
+func (e *Editor) prevField() {
 	e.blurAll()
 	if e.focusedField == FieldName {
 		e.focusedField = FieldCancel
@@ -1563,8 +1564,7 @@ func (e *PolicyEditor) prevField() {
 	e.focusCurrent()
 }
 
-// adjustFieldForMode skips fields that don't apply to current mode (single vs multi-process)
-func (e *PolicyEditor) adjustFieldForMode(field PolicyEditorField, forward bool) PolicyEditorField {
+func (e *Editor) adjustFieldForMode(field EditorField, forward bool) EditorField {
 	if e.multiProcessEnabled {
 		if field == FieldSourceFile || field == FieldTestCases {
 			if forward {
@@ -1583,13 +1583,13 @@ func (e *PolicyEditor) adjustFieldForMode(field PolicyEditorField, forward bool)
 	return field
 }
 
-func (e *PolicyEditor) blurAll() {
+func (e *Editor) blurAll() {
 	e.nameInput.Blur()
 	e.flagsInput.Blur()
 	e.sourceFileInput.Blur()
 }
 
-func (e *PolicyEditor) focusCurrent() {
+func (e *Editor) focusCurrent() {
 	switch e.focusedField {
 	case FieldName:
 		e.nameInput.Focus()
@@ -1600,11 +1600,11 @@ func (e *PolicyEditor) focusCurrent() {
 	}
 }
 
-func (e *PolicyEditor) save() tea.Cmd {
+func (e *Editor) save() tea.Cmd {
 	return func() tea.Msg {
 		name := strings.TrimSpace(e.nameInput.Value())
 		if name == "" {
-			return policySaveErrorMsg{err: "Policy name is required"}
+			return SaveErrorMsg{Err: "Policy name is required"}
 		}
 
 		flagsStr := strings.TrimSpace(e.flagsInput.Value())
@@ -1727,7 +1727,7 @@ func (e *PolicyEditor) save() tea.Cmd {
 
 		data, err := yaml.Marshal(p)
 		if err != nil {
-			return policySaveErrorMsg{err: fmt.Sprintf("Failed to create YAML: %v", err)}
+			return SaveErrorMsg{Err: fmt.Sprintf("Failed to create YAML: %v", err)}
 		}
 
 		var filePath string
@@ -1739,11 +1739,11 @@ func (e *PolicyEditor) save() tea.Cmd {
 
 			policiesDir, err := config.PoliciesDir()
 			if err != nil {
-				return policySaveErrorMsg{err: fmt.Sprintf("Failed to get config dir: %v", err)}
+				return SaveErrorMsg{Err: fmt.Sprintf("Failed to get config dir: %v", err)}
 			}
 
 			if err := os.MkdirAll(policiesDir, 0755); err != nil {
-				return policySaveErrorMsg{err: fmt.Sprintf("Failed to create directory: %v", err)}
+				return SaveErrorMsg{Err: fmt.Sprintf("Failed to create directory: %v", err)}
 			}
 
 			filePath = filepath.Join(policiesDir, safeName+".yaml")
@@ -1752,24 +1752,23 @@ func (e *PolicyEditor) save() tea.Cmd {
 		}
 
 		if err := os.WriteFile(filePath, data, 0644); err != nil {
-			return policySaveErrorMsg{err: fmt.Sprintf("Failed to save: %v", err)}
+			return SaveErrorMsg{Err: fmt.Sprintf("Failed to save: %v", err)}
 		}
 
-		return policySavedMsg{path: filePath, isNew: e.isNew}
+		return SavedMsg{Path: filePath, IsNew: e.isNew}
 	}
 }
 
-func (e *PolicyEditor) View() string {
+func (e *Editor) View() string {
 	if e.editingProcess {
 		var b strings.Builder
 		if e.editingProcessIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Process"))
+			b.WriteString(components.RenderHeader("Edit Process"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Process"))
+			b.WriteString(components.RenderHeader("Add Process"))
 		}
-		b.WriteString("\n\n")
 
-		box := styles.BoxStyle(80)
+		box := components.BoxStyle(80)
 		var content strings.Builder
 
 		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 0))
@@ -1781,7 +1780,7 @@ func (e *PolicyEditor) View() string {
 		content.WriteString("Source:    ")
 		content.WriteString(e.processInputs.sourceFile.View())
 		content.WriteString("\n")
-		content.WriteString(styles.SubtleText.Render("             (binary = filename without .c)"))
+		content.WriteString(components.SubtleText.Render("             (binary = filename without .c)"))
 		content.WriteString("\n\n")
 
 		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 2))
@@ -1800,18 +1799,18 @@ func (e *PolicyEditor) View() string {
 		}
 		content.WriteString(components.FocusPrefix(e.processInputs.focusedIdx == 4))
 		if e.processInputs.focusedIdx == 4 {
-			content.WriteString(styles.SelectedItem.Render(buttonText))
+			content.WriteString(components.SelectedItem.Render(buttonText))
 		} else {
-			content.WriteString(styles.NormalItem.Render(buttonText))
+			content.WriteString(components.NormalItem.Render(buttonText))
 		}
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
-		if e.errorMsg != "" {
-			b.WriteString(styles.ErrorStyle.Render("  Error: " + e.errorMsg))
+		if e.ErrorMsg != "" {
+			b.WriteString(components.ErrorStyle.Render("  Error: " + e.ErrorMsg))
 			b.WriteString("\n")
 		}
-		b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+		b.WriteString(components.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
 
 		return b.String()
 	}
@@ -1836,13 +1835,12 @@ func (e *PolicyEditor) View() string {
 	if e.editingTestCase {
 		var b strings.Builder
 		if e.editingTestCaseIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Test Case"))
+			b.WriteString(components.RenderHeader("Edit Test Case"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Test Case"))
+			b.WriteString(components.RenderHeader("Add Test Case"))
 		}
-		b.WriteString("\n\n")
 
-		box := styles.BoxStyle(80)
+		box := components.BoxStyle(80)
 		var content strings.Builder
 
 		content.WriteString(e.renderInputRow("Name:          ", e.testCaseInputs.focusedInput == 0, e.testCaseInputs.name, ""))
@@ -1877,17 +1875,17 @@ func (e *PolicyEditor) View() string {
 		}
 		content.WriteString(components.FocusPrefix(e.testCaseInputs.focusedInput == 5))
 		if e.testCaseInputs.focusedInput == 5 {
-			content.WriteString(styles.SelectedItem.Render(buttonText))
+			content.WriteString(components.SelectedItem.Render(buttonText))
 		} else {
-			content.WriteString(styles.NormalItem.Render(buttonText))
+			content.WriteString(components.NormalItem.Render(buttonText))
 		}
 
 		b.WriteString(box.Render(content.String()))
 		b.WriteString("\n\n")
 		if e.testCaseInputs.focusedInput == 4 {
-			b.WriteString(styles.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
+			b.WriteString(components.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
 		} else {
-			b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+			b.WriteString(components.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
 		}
 
 		return b.String()
@@ -1913,17 +1911,16 @@ func (e *PolicyEditor) View() string {
 	if e.editingScenario {
 		var b strings.Builder
 		if e.editingScenarioIdx >= 0 {
-			b.WriteString(styles.HeaderStyle.Render("Edit Test Scenario"))
+			b.WriteString(components.RenderHeader("Edit Test Scenario"))
 		} else {
-			b.WriteString(styles.HeaderStyle.Render("Add Test Scenario"))
+			b.WriteString(components.RenderHeader("Add Test Scenario"))
 		}
-		b.WriteString("\n\n")
 
 		numProcesses := len(e.multiProcessExecs)
 		totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
 		saveIdx := totalFields - 1
 
-		box := styles.BoxStyle(90)
+		box := components.BoxStyle(90)
 		var content strings.Builder
 
 		content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == 0))
@@ -1931,12 +1928,12 @@ func (e *PolicyEditor) View() string {
 		content.WriteString(e.scenarioInputs.name.View())
 		content.WriteString("\n\n")
 
-		content.WriteString(styles.SubtleText.Render("Configure each process:"))
+		content.WriteString(components.SubtleText.Render("Configure each process:"))
 		content.WriteString("\n\n")
 
 		for i, proc := range e.multiProcessExecs {
-			content.WriteString(styles.Subtle.Render(fmt.Sprintf("  %s", proc.Name)))
-			content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
+			content.WriteString(components.Subtle.Render(fmt.Sprintf("  %s", proc.Name)))
+			content.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
 			content.WriteString("\n")
 
 			argsIdx := 1 + (i * 4)
@@ -1966,9 +1963,9 @@ func (e *PolicyEditor) View() string {
 		}
 		content.WriteString(components.FocusPrefix(e.scenarioInputs.focusedIdx == saveIdx))
 		if e.scenarioInputs.focusedIdx == saveIdx {
-			content.WriteString(styles.SelectedItem.Render(buttonText))
+			content.WriteString(components.SelectedItem.Render(buttonText))
 		} else {
-			content.WriteString(styles.NormalItem.Render(buttonText))
+			content.WriteString(components.NormalItem.Render(buttonText))
 		}
 
 		b.WriteString(box.Render(content.String()))
@@ -1982,9 +1979,9 @@ func (e *PolicyEditor) View() string {
 			}
 		}
 		if isOnExpectedOutput {
-			b.WriteString(styles.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
+			b.WriteString(components.SubtleText.Render("  a add  •  e existing  •  d remove  •  tab/↑↓ navigate  •  esc cancel"))
 		} else {
-			b.WriteString(styles.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
+			b.WriteString(components.SubtleText.Render("  tab/↑↓ navigate  •  enter save  •  esc cancel"))
 		}
 
 		return b.String()
@@ -2041,7 +2038,7 @@ func (e *PolicyEditor) View() string {
 
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary).
+		Foreground(components.Primary).
 		Padding(0, 2)
 
 	title := "Edit Policy"
@@ -2056,16 +2053,13 @@ func (e *PolicyEditor) View() string {
 	// ═══════════════════════════════════════════════════════════════════════════
 	sectionHeader := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.Primary)
+		Foreground(components.Primary)
 	b.WriteString(sectionHeader.Render("  GENERAL SETTINGS"))
 	b.WriteString("\n")
 
 	smallBoxHeight := 6
 
-	formBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Muted).
-		Padding(0, 1).
+	formBox := components.FormBoxStyle().
 		Width(colWidth).
 		Height(4)
 
@@ -2081,16 +2075,12 @@ func (e *PolicyEditor) View() string {
 	b.WriteString(row1)
 	b.WriteString("\n")
 
-	libBorder := styles.Muted
-	if e.focusedField == FieldLibraryFiles {
-		libBorder = styles.Primary
-	}
-	libBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(libBorder).
-		Padding(0, 1).
+	libBox := components.FormBoxStyle().
 		Width(colWidth).
 		Height(smallBoxHeight)
+	if e.focusedField == FieldLibraryFiles {
+		libBox = libBox.BorderForeground(components.Primary)
+	}
 
 	libDisplayItems := make([]string, len(e.libraryFiles))
 	for i, f := range e.libraryFiles {
@@ -2105,16 +2095,12 @@ func (e *PolicyEditor) View() string {
 		false,
 	)
 
-	tfBorder := styles.Muted
-	if e.focusedField == FieldTestFiles {
-		tfBorder = styles.Primary
-	}
-	tfBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(tfBorder).
-		Padding(0, 1).
+	tfBox := components.FormBoxStyle().
 		Width(colWidth).
 		Height(smallBoxHeight)
+	if e.focusedField == FieldTestFiles {
+		tfBox = tfBox.BorderForeground(components.Primary)
+	}
 
 	tfContent := e.renderListSection(
 		"Test Files",
@@ -2133,28 +2119,23 @@ func (e *PolicyEditor) View() string {
 	// SECTION 2: EXECUTION MODE TOGGLE (single-process vs multi-process)
 	// ═══════════════════════════════════════════════════════════════════════════
 	b.WriteString(sectionHeader.Render("  EXECUTION MODE"))
-	b.WriteString(styles.SubtleText.Render("  e/↵ toggle"))
+	b.WriteString(components.SubtleText.Render("  e/↵ toggle"))
 	b.WriteString("\n")
 
-	modeBorder := styles.Muted
+	modeBox := components.CompactBoxStyle().Width(fullWidth)
 	if e.focusedField == FieldMultiProcessToggle {
-		modeBorder = styles.Primary
+		modeBox = modeBox.BorderForeground(components.Primary)
 	}
-	modeBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(modeBorder).
-		Padding(0, 2).
-		Width(fullWidth)
 
 	var modeContent strings.Builder
 	if !e.multiProcessEnabled {
-		modeContent.WriteString(styles.SuccessText.Render("●") + " Single Process" + styles.SubtleText.Render(" - Compile one source file into one binary"))
+		modeContent.WriteString(components.SuccessText.Render("●") + " Single Process" + components.SubtleText.Render(" - Compile one source file into one binary"))
 		modeContent.WriteString("\n")
-		modeContent.WriteString(styles.SubtleText.Render("○ Multi-Process - Multiple binaries running in parallel"))
+		modeContent.WriteString(components.SubtleText.Render("○ Multi-Process - Multiple binaries running in parallel"))
 	} else {
-		modeContent.WriteString(styles.SubtleText.Render("○ Single Process - Compile one source file into one binary"))
+		modeContent.WriteString(components.SubtleText.Render("○ Single Process - Compile one source file into one binary"))
 		modeContent.WriteString("\n")
-		modeContent.WriteString(styles.SuccessText.Render("●") + " Multi-Process" + styles.SubtleText.Render(" - Multiple binaries running in parallel"))
+		modeContent.WriteString(components.SuccessText.Render("●") + " Multi-Process" + components.SubtleText.Render(" - Multiple binaries running in parallel"))
 	}
 
 	b.WriteString(modeBox.Render(modeContent.String()))
@@ -2175,43 +2156,35 @@ func (e *PolicyEditor) View() string {
 	row2Height := 9
 
 	if !e.multiProcessEnabled {
-		srcBorder := styles.Muted
-		if e.focusedField == FieldSourceFile {
-			srcBorder = styles.Primary
-		}
-		srcBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(srcBorder).
-			Padding(0, 1).
+		srcBox := components.FormBoxStyle().
 			Width(colWidth).
 			Height(row2Height)
+		if e.focusedField == FieldSourceFile {
+			srcBox = srcBox.BorderForeground(components.Primary)
+		}
 
 		var srcContent strings.Builder
 		srcContent.WriteString(e.renderFieldCompact("Source File", e.sourceFileInput.View(), FieldSourceFile))
-		srcContent.WriteString(styles.SubtleText.Render("  Binary will be named: "))
+		srcContent.WriteString(components.SubtleText.Render("  Binary will be named: "))
 		sourceFile := strings.TrimSpace(e.sourceFileInput.Value())
 		if sourceFile != "" {
 			binaryName := sourceFile
 			if ext := filepath.Ext(binaryName); ext == ".c" {
 				binaryName = binaryName[:len(binaryName)-len(ext)]
 			}
-			srcContent.WriteString(styles.Subtle.Render(binaryName))
+			srcContent.WriteString(components.Subtle.Render(binaryName))
 		} else {
-			srcContent.WriteString(styles.SubtleText.Render("(enter source file)"))
+			srcContent.WriteString(components.SubtleText.Render("(enter source file)"))
 		}
 
 		leftCol2 := srcBox.Render(srcContent.String())
 
-		tcBorder := styles.Muted
-		if e.focusedField == FieldTestCases {
-			tcBorder = styles.Primary
-		}
-		tcBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tcBorder).
-			Padding(0, 1).
+		tcBox := components.FormBoxStyle().
 			Width(colWidth).
 			Height(row2Height)
+		if e.focusedField == FieldTestCases {
+			tcBox = tcBox.BorderForeground(components.Primary)
+		}
 
 		tcDisplayItems := make([]string, len(e.testCases))
 		for i, tc := range e.testCases {
@@ -2239,24 +2212,20 @@ func (e *PolicyEditor) View() string {
 		b.WriteString(row2)
 		b.WriteString("\n\n")
 	} else {
-		mpBorder := styles.Muted
-		if e.focusedField == FieldMultiProcess {
-			mpBorder = styles.Primary
-		}
-		mpBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(mpBorder).
-			Padding(0, 1).
+		mpBox := components.FormBoxStyle().
 			Width(colWidth).
 			Height(row2Height)
+		if e.focusedField == FieldMultiProcess {
+			mpBox = mpBox.BorderForeground(components.Primary)
+		}
 
 		var mpContent strings.Builder
 		if e.focusedField == FieldMultiProcess {
-			mpContent.WriteString(styles.Highlight.Render("Processes"))
+			mpContent.WriteString(components.Highlight.Render("Processes"))
 		} else {
 			mpContent.WriteString("Processes")
 		}
-		mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(e.multiProcessExecs))))
+		mpContent.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%d)", len(e.multiProcessExecs))))
 
 		innerHeight := row2Height - 2
 		maxItems := innerHeight - 1
@@ -2266,7 +2235,7 @@ func (e *PolicyEditor) View() string {
 
 		if len(e.multiProcessExecs) == 0 {
 			mpContent.WriteString("\n")
-			mpContent.WriteString(styles.SubtleText.Render("  (none)"))
+			mpContent.WriteString(components.SubtleText.Render("  (none)"))
 		} else {
 			start, end := e.getScrollWindow(e.multiProcessCursor, len(e.multiProcessExecs), maxItems)
 			for i := start; i < end; i++ {
@@ -2277,29 +2246,25 @@ func (e *PolicyEditor) View() string {
 				}
 				mpContent.WriteString("\n")
 				if e.focusedField == FieldMultiProcess && i == e.multiProcessCursor {
-					mpContent.WriteString("> " + styles.SelectedItem.Render(name))
+					mpContent.WriteString("> " + components.SelectedItem.Render(name))
 				} else {
-					mpContent.WriteString("  " + styles.NormalItem.Render(name))
+					mpContent.WriteString("  " + components.NormalItem.Render(name))
 				}
 			}
 			if len(e.multiProcessExecs) > maxItems {
 				mpContent.WriteString("\n")
-				mpContent.WriteString(styles.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(e.multiProcessExecs))))
+				mpContent.WriteString(components.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(e.multiProcessExecs))))
 			}
 		}
 
 		leftCol2 := mpBox.Render(mpContent.String())
 
-		tsBorder := styles.Muted
-		if e.focusedField == FieldMultiProcessTests {
-			tsBorder = styles.Primary
-		}
-		tsBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tsBorder).
-			Padding(0, 1).
+		tsBox := components.FormBoxStyle().
 			Width(colWidth).
 			Height(row2Height)
+		if e.focusedField == FieldMultiProcessTests {
+			tsBox = tsBox.BorderForeground(components.Primary)
+		}
 
 		tsDisplayItems := make([]string, len(e.testScenarios))
 		for i, ts := range e.testScenarios {
@@ -2332,7 +2297,7 @@ func (e *PolicyEditor) View() string {
 		Foreground(lipgloss.Color("#67E8F9")).
 		Bold(true)
 	descStyle := lipgloss.NewStyle().
-		Foreground(styles.Muted)
+		Foreground(components.Muted)
 
 	var hints strings.Builder
 	switch e.focusedField {
@@ -2403,15 +2368,15 @@ func (e *PolicyEditor) View() string {
 
 	b.WriteString(buttons.String())
 
-	if e.errorMsg != "" {
+	if e.ErrorMsg != "" {
 		b.WriteString("\n")
-		b.WriteString(styles.ErrorStyle.Render("  Error: " + e.errorMsg))
+		b.WriteString(components.ErrorStyle.Render("  Error: " + e.ErrorMsg))
 	}
 
 	return b.String()
 }
 
-func (e *PolicyEditor) InSubMode() bool {
+func (e *Editor) InSubMode() bool {
 	return e.browsingForLibs || e.browsingForTests ||
 		e.showingExistingLibs || e.showingExistingTests ||
 		e.browsingForExpectedOutput || e.showingExistingExpectedOutput ||
@@ -2419,7 +2384,7 @@ func (e *PolicyEditor) InSubMode() bool {
 		e.editingTestCase || e.editingProcess || e.editingScenario
 }
 
-func (e *PolicyEditor) getScrollWindow(cursor, total, maxVisible int) (start, end int) {
+func (e *Editor) getScrollWindow(cursor, total, maxVisible int) (start, end int) {
 	if total <= maxVisible {
 		return 0, total
 	}
@@ -2437,7 +2402,7 @@ func (e *PolicyEditor) getScrollWindow(cursor, total, maxVisible int) (start, en
 	return start, end
 }
 
-func (e *PolicyEditor) renderListSection(title string, items []string, cursor int, focused bool, boxHeight int, editable bool) string {
+func (e *Editor) renderListSection(title string, items []string, cursor int, focused bool, boxHeight int, editable bool) string {
 	innerHeight := boxHeight - 2
 	maxItems := innerHeight - 1
 	if maxItems < 1 {
@@ -2447,41 +2412,41 @@ func (e *PolicyEditor) renderListSection(title string, items []string, cursor in
 	var content strings.Builder
 
 	if focused {
-		content.WriteString(styles.Highlight.Render(title))
+		content.WriteString(components.Highlight.Render(title))
 	} else {
 		content.WriteString(title)
 	}
-	content.WriteString(styles.SubtleText.Render(fmt.Sprintf(" (%d)", len(items))))
+	content.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%d)", len(items))))
 
 	if len(items) == 0 {
 		content.WriteString("\n")
-		content.WriteString(styles.SubtleText.Render("  (none)"))
+		content.WriteString(components.SubtleText.Render("  (none)"))
 	} else {
 		start, end := e.getScrollWindow(cursor, len(items), maxItems)
 		for i := start; i < end; i++ {
 			content.WriteString("\n")
 			if focused && i == cursor {
-				content.WriteString("> " + styles.SelectedItem.Render(items[i]))
+				content.WriteString("> " + components.SelectedItem.Render(items[i]))
 			} else {
-				content.WriteString("  " + styles.NormalItem.Render(items[i]))
+				content.WriteString("  " + components.NormalItem.Render(items[i]))
 			}
 		}
 		if len(items) > maxItems {
 			content.WriteString("\n")
-			content.WriteString(styles.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(items))))
+			content.WriteString(components.SubtleText.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, len(items))))
 		}
 	}
 
 	return content.String()
 }
 
-func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEditorField) string {
+func (e *Editor) renderFieldCompact(label, input string, field EditorField) string {
 	var b strings.Builder
 
 	if e.focusedField == field {
-		b.WriteString(styles.Highlight.Render("> " + label + ":"))
+		b.WriteString(components.Highlight.Render("> " + label + ":"))
 	} else {
-		b.WriteString(styles.Subtle.Render("  " + label + ":"))
+		b.WriteString(components.Subtle.Render("  " + label + ":"))
 	}
 	b.WriteString("\n  " + input + "\n")
 
@@ -2489,23 +2454,23 @@ func (e *PolicyEditor) renderFieldCompact(label, input string, field PolicyEdito
 }
 
 type (
-	policySavedMsg struct {
-		path  string
-		isNew bool
+	SavedMsg struct {
+		Path  string
+		IsNew bool
 	}
-	policySaveErrorMsg struct {
-		err string
+	SaveErrorMsg struct {
+		Err string
 	}
-	policyDeletedMsg struct {
-		name string
+	DeletedMsg struct {
+		Name string
 	}
 )
 
 func DeletePolicy(p *policy.Policy) tea.Cmd {
 	return func() tea.Msg {
 		if err := os.Remove(p.FilePath); err != nil {
-			return errorMsg(err)
+			return DeleteErrorMsg{Err: err}
 		}
-		return policyDeletedMsg{name: p.Name}
+		return DeletedMsg{Name: p.Name}
 	}
 }
