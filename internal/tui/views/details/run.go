@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 
 func renderRunTab(s State) string {

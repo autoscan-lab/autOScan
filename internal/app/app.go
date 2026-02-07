@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/feli05/autoscan/internal/tui"
+	"github.com/felitrejos/autoscan/internal/tui"
 )
 
 // Run initializes and starts the application

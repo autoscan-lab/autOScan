@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/policy"
+	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/policy"
 )
 
 // Runner orchestrates the full grading pipeline.

@@ -38,7 +38,7 @@
 
 **Supported Platforms:** macOS (arm64), Linux (amd64) and Windows (amd64)
 
-Download the appropriate binary from [Releases](https://github.com/feli05/autOScan/releases):
+Download the appropriate binary from [Releases](https://github.com/felitrejos/autOScan/releases):
 
 **macOS:**
 ```bash
@@ -62,7 +62,7 @@ On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add
 ### Build from Source
 
 ```bash
-git clone https://github.com/feli05/autOScan.git
+git clone https://github.com/felitrejos/autOScan.git
 cd autOScan
 make install
 ```
