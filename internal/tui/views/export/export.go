@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/feli05/autoscan/internal/domain"
-	exportpkg "github.com/feli05/autoscan/internal/export"
-	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/felitrejos/autoscan/internal/domain"
+	exportpkg "github.com/felitrejos/autoscan/internal/export"
+	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 
 type State struct {

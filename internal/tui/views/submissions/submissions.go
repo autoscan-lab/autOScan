@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/config"
-	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/tui/components"
+	"github.com/felitrejos/autoscan/internal/config"
+	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 
 type SimilarityComputeState int

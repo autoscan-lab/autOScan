@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/feli05/autoscan/internal/config"
+	"github.com/felitrejos/autoscan/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

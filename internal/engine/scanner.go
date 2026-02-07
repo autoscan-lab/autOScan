@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/policy"
+	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/policy"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/c"
 )

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/feli05/autoscan/internal/domain"
-	"github.com/feli05/autoscan/internal/policy"
+	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/policy"
 )
 
 func unescapeInput(s string) string {

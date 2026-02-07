@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/feli05/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan/internal/domain"
 )
 
 // Export a report to CSV format

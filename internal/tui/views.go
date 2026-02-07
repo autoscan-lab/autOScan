@@ -2,15 +2,15 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/feli05/autoscan/internal/tui/components"
-	"github.com/feli05/autoscan/internal/tui/views/banned"
-	"github.com/feli05/autoscan/internal/tui/views/details"
-	"github.com/feli05/autoscan/internal/tui/views/directory"
-	exportview "github.com/feli05/autoscan/internal/tui/views/export"
-	"github.com/feli05/autoscan/internal/tui/views/home"
-	policyview "github.com/feli05/autoscan/internal/tui/views/policy"
-	"github.com/feli05/autoscan/internal/tui/views/settings"
-	"github.com/feli05/autoscan/internal/tui/views/submissions"
+	"github.com/felitrejos/autoscan/internal/tui/components"
+	"github.com/felitrejos/autoscan/internal/tui/views/banned"
+	"github.com/felitrejos/autoscan/internal/tui/views/details"
+	"github.com/felitrejos/autoscan/internal/tui/views/directory"
+	exportview "github.com/felitrejos/autoscan/internal/tui/views/export"
+	"github.com/felitrejos/autoscan/internal/tui/views/home"
+	policyview "github.com/felitrejos/autoscan/internal/tui/views/policy"
+	"github.com/felitrejos/autoscan/internal/tui/views/settings"
+	"github.com/felitrejos/autoscan/internal/tui/views/submissions"
 )
 
 func (m Model) View() string {
