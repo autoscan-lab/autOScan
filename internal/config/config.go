@@ -15,22 +15,22 @@ var defaultsFS embed.FS
 
 // Settings holds the global settings
 type Settings struct {
-	ShortNames bool `yaml:"short_names"`
-	KeepBinaries bool `yaml:"keep_binaries"`
-	MaxWorkers int `yaml:"max_workers"`
-	PlagiarismWindowSize int `yaml:"plagiarism_window_size"`
-	PlagiarismMinFuncTokens int `yaml:"plagiarism_min_func_tokens"`
+	ShortNames               bool    `yaml:"short_names"`
+	KeepBinaries             bool    `yaml:"keep_binaries"`
+	MaxWorkers               int     `yaml:"max_workers"`
+	PlagiarismWindowSize     int     `yaml:"plagiarism_window_size"`
+	PlagiarismMinFuncTokens  int     `yaml:"plagiarism_min_func_tokens"`
 	PlagiarismScoreThreshold float64 `yaml:"plagiarism_score_threshold"`
 }
 
 // DefaultSettings returns the default settings
 func DefaultSettings() Settings {
 	return Settings{
-		ShortNames:   true,
-		KeepBinaries: false,
-		MaxWorkers:   0, // 0 = use all CPUs
-		PlagiarismWindowSize: 6,
-		PlagiarismMinFuncTokens: 14,
+		ShortNames:               true,
+		KeepBinaries:             false,
+		MaxWorkers:               0, // 0 = use all CPUs
+		PlagiarismWindowSize:     6,
+		PlagiarismMinFuncTokens:  14,
 		PlagiarismScoreThreshold: 0.6,
 	}
 }
@@ -60,6 +60,15 @@ func BannedFile() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "banned.yaml"), nil
+}
+
+// AIDictionaryFile returns the ai_dictionary.yaml file path.
+func AIDictionaryFile() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ai_dictionary.yaml"), nil
 }
 
 // LibrariesDir returns the libraries directory path
