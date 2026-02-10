@@ -1,0 +1,302 @@
+# autOScan AI Dictionary
+
+entries:
+  - id: "manual_endian_swap_16"
+    category: "sockets"
+    title: "Manual 16-bit endian swap instead of htons/ntohs"
+    code: |
+      unsigned short host_to_net16(unsigned short x) {
+          return (unsigned short)((x << 8) | (x >> 8));
+      }
+
+      unsigned short net_to_host16(unsigned short x) {
+          return (unsigned short)((x << 8) | (x >> 8));
+      }
+
+  - id: "manual_endian_swap_32"
+    category: "sockets"
+    title: "Manual 32-bit endian swap instead of htonl/ntohl"
+    code: |
+      unsigned int host_to_net32(unsigned int x) {
+          return ((x & 0x000000FFU) << 24) |
+                 ((x & 0x0000FF00U) << 8)  |
+                 ((x & 0x00FF0000U) >> 8)  |
+                 ((x & 0xFF000000U) >> 24);
+      }
+
+      unsigned int net_to_host32(unsigned int x) {
+          return ((x & 0x000000FFU) << 24) |
+                 ((x & 0x0000FF00U) << 8)  |
+                 ((x & 0x00FF0000U) >> 8)  |
+                 ((x & 0xFF000000U) >> 24);
+      }
+
+  - id: "busy_wait_instead_of_condvar"
+    category: "threads"
+    title: "Busy-wait loop replacing pthread_cond_wait"
+    code: |
+      volatile int ready_flag = 0;
+
+      void wait_until_ready(void) {
+          while (!ready_flag) {
+              usleep(1000);
+          }
+      }
+
+      void signal_ready(void) {
+          ready_flag = 1;
+      }
+
+  - id: "spinlock_with_atomic_builtin"
+    category: "threads"
+    title: "Custom spinlock with gcc atomic builtins"
+    code: |
+      typedef struct {
+          volatile int state;
+      } spinlock_t;
+
+      void spin_lock(spinlock_t *lock) {
+          while (__sync_lock_test_and_set(&lock->state, 1)) {
+              while (lock->state) {
+              }
+          }
+      }
+
+      void spin_unlock(spinlock_t *lock) {
+          __sync_lock_release(&lock->state);
+      }
+
+  - id: "polling_loop_for_message_queue"
+    category: "ipc"
+    title: "Polling mq_receive with retry sleep"
+    code: |
+      int recv_with_poll(int mq, char *buf, int len) {
+          int n;
+          while (1) {
+              n = mq_receive(mq, buf, len, 0);
+              if (n >= 0) {
+                  return n;
+              }
+              if (errno != EAGAIN) {
+                  return -1;
+              }
+              usleep(2000);
+          }
+      }
+
+  - id: "pipe_fork_bridge_template"
+    category: "process"
+    title: "Fork + pipe patterns (one-way and request/response)"
+    code: |
+      int run_child_oneway(void) {
+          int p2c[2];
+          pid_t pid;
+          char ch;
+
+          if (pipe(p2c) < 0) {
+              return -1;
+          }
+
+          pid = fork();
+          if (pid < 0) {
+              return -1;
+          }
+
+          if (pid == 0) {
+              close(p2c[0]);
+              ch = 'X';
+              write(p2c[1], &ch, 1);
+              close(p2c[1]);
+              _exit(0);
+          }
+
+          close(p2c[1]);
+          read(p2c[0], &ch, 1);
+          close(p2c[0]);
+          waitpid(pid, 0, 0);
+          return 0;
+      }
+
+      int run_child_roundtrip(void) {
+          int p2c[2];
+          int c2p[2];
+          pid_t pid;
+          char in = 'A';
+          char out = 0;
+
+          if (pipe(p2c) < 0 || pipe(c2p) < 0) {
+              return -1;
+          }
+
+          pid = fork();
+          if (pid < 0) {
+              return -1;
+          }
+
+          if (pid == 0) {
+              close(p2c[1]);
+              close(c2p[0]);
+              read(p2c[0], &out, 1);
+              if (out >= 'a' && out <= 'z') {
+                  out = (char)(out - ('a' - 'A'));
+              }
+              write(c2p[1], &out, 1);
+              close(p2c[0]);
+              close(c2p[1]);
+              _exit(0);
+          }
+
+          close(p2c[0]);
+          close(c2p[1]);
+          write(p2c[1], &in, 1);
+          read(c2p[0], &out, 1);
+          close(p2c[1]);
+          close(c2p[0]);
+          waitpid(pid, 0, 0);
+          return 0;
+      }
+
+  - id: "manual_nonblocking_read_retry"
+    category: "io"
+    title: "Retry loop for EAGAIN/EWOULDBLOCK"
+    code: |
+      int read_retry(int fd, char *buf, int cap) {
+          int n;
+          while (1) {
+              n = read(fd, buf, cap);
+              if (n >= 0) {
+                  return n;
+              }
+              if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                  usleep(1000);
+                  continue;
+              }
+              return -1;
+          }
+      }
+
+  - id: "signal_stop_flag_template"
+    category: "signals"
+    title: "Signal handler with global stop flag"
+    code: |
+      volatile sig_atomic_t keep_running = 1;
+
+      void on_signal(int signo) {
+          (void)signo;
+          keep_running = 0;
+      }
+
+      int event_loop(void) {
+          while (keep_running) {
+              usleep(5000);
+          }
+          return 0;
+      }
+
+  - id: "bounded_shared_ring_buffer"
+    category: "ipc"
+    title: "Shared-memory ring buffer skeleton"
+    code: |
+      #define RING_CAP 64
+
+      typedef struct {
+          int head;
+          int tail;
+          int data[RING_CAP];
+      } ring_t;
+
+      int ring_push(ring_t *r, int v) {
+          int next = (r->tail + 1) % RING_CAP;
+          if (next == r->head) {
+              return 0;
+          }
+          r->data[r->tail] = v;
+          r->tail = next;
+          return 1;
+      }
+
+      int ring_pop(ring_t *r, int *out) {
+          if (r->head == r->tail) {
+              return 0;
+          }
+          *out = r->data[r->head];
+          r->head = (r->head + 1) % RING_CAP;
+          return 1;
+      }
+
+  - id: "fcntl_lock_retry"
+    category: "files"
+    title: "fcntl write lock with retry loop"
+    code: |
+      int lock_file_retry(int fd) {
+          struct flock lk;
+          lk.l_type = F_WRLCK;
+          lk.l_whence = SEEK_SET;
+          lk.l_start = 0;
+          lk.l_len = 0;
+
+          while (fcntl(fd, F_SETLK, &lk) < 0) {
+              if (errno != EACCES && errno != EAGAIN) {
+                  return -1;
+              }
+              usleep(3000);
+          }
+          return 0;
+      }
+
+  - id: "select_timeout_wrapper"
+    category: "sockets"
+    title: "select-based timeout wrapper"
+    code: |
+      int wait_readable(int fd, int timeout_ms) {
+          fd_set rfds;
+          struct timeval tv;
+          int rc;
+
+          FD_ZERO(&rfds);
+          FD_SET(fd, &rfds);
+
+          tv.tv_sec = timeout_ms / 1000;
+          tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+          rc = select(fd + 1, &rfds, 0, 0, &tv);
+          if (rc <= 0) {
+              return rc;
+          }
+          return FD_ISSET(fd, &rfds) ? 1 : 0;
+      }
+
+  - id: "cleanup_goto_pattern"
+    category: "resource-management"
+    title: "Single-exit cleanup with goto"
+    code: |
+      int do_work(const char *path) {
+          int fd = -1;
+          char *buf = 0;
+          int rc = -1;
+
+          fd = open(path, O_RDONLY);
+          if (fd < 0) {
+              goto cleanup;
+          }
+
+          buf = malloc(4096);
+          if (buf == 0) {
+              goto cleanup;
+          }
+
+          if (read(fd, buf, 4096) < 0) {
+              goto cleanup;
+          }
+
+          rc = 0;
+
+      cleanup:
+          if (fd >= 0) {
+              close(fd);
+          }
+          if (buf) {
+              free(buf);
+          }
+          return rc;
+      }
