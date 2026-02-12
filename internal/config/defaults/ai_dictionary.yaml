@@ -37,10 +37,16 @@ entries:
     code: |
       volatile int ready_flag = 0;
 
-      void wait_until_ready(void) {
+      int wait_until_ready_with_timeout(int max_spins) {
+          int spins = 0;
           while (!ready_flag) {
+              if (spins >= max_spins) {
+                  return -1;
+              }
               usleep(1000);
+              spins++;
           }
+          return 0;
       }
 
       void signal_ready(void) {
@@ -186,11 +192,21 @@ entries:
           keep_running = 0;
       }
 
-      int event_loop(void) {
+      int event_loop_with_limit(int sleep_us, int max_iters) {
+          int iters = 0;
           while (keep_running) {
-              usleep(5000);
+              usleep(sleep_us);
+              iters++;
+              if (max_iters > 0 && iters >= max_iters) {
+                  break;
+              }
           }
-          return 0;
+          return iters;
+      }
+
+      void install_default_handlers(void) {
+          signal(SIGINT, on_signal);
+          signal(SIGTERM, on_signal);
       }
 
   - id: "bounded_shared_ring_buffer"
@@ -299,4 +315,76 @@ entries:
               free(buf);
           }
           return rc;
+      }
+
+  - id: "posix_named_semaphore_flow"
+    category: "ipc"
+    title: "POSIX named semaphore open/wait/post/close/unlink"
+    code: |
+      int run_named_semaphore_worker(const char *name, int loops) {
+          sem_t *sem;
+          int i;
+
+          sem = sem_open(name, O_CREAT, 0600, 1);
+          if (sem == SEM_FAILED) {
+              return -1;
+          }
+
+          for (i = 0; i < loops; i++) {
+              if (sem_wait(sem) < 0) {
+                  sem_close(sem);
+                  return -1;
+              }
+              usleep(500);
+              if (sem_post(sem) < 0) {
+                  sem_close(sem);
+                  return -1;
+              }
+          }
+
+          if (sem_close(sem) < 0) {
+              return -1;
+          }
+          return sem_unlink(name);
+      }
+
+  - id: "posix_shared_memory_mmap_flow"
+    category: "ipc"
+    title: "POSIX shared memory with shm_open + ftruncate + mmap"
+    code: |
+      typedef struct {
+          int counter;
+          char data[128];
+      } shm_block_t;
+
+      int write_shared_block(const char *name, const char *msg) {
+          int fd;
+          shm_block_t *blk;
+
+          fd = shm_open(name, O_CREAT | O_RDWR, 0600);
+          if (fd < 0) {
+              return -1;
+          }
+          if (ftruncate(fd, sizeof(shm_block_t)) < 0) {
+              close(fd);
+              return -1;
+          }
+
+          blk = (shm_block_t *)mmap(0, sizeof(shm_block_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+          if (blk == MAP_FAILED) {
+              close(fd);
+              return -1;
+          }
+
+          blk->counter = blk->counter + 1;
+          strncpy(blk->data, msg, sizeof(blk->data) - 1);
+          blk->data[sizeof(blk->data) - 1] = '\0';
+
+          munmap(blk, sizeof(shm_block_t));
+          close(fd);
+          return 0;
+      }
+
+      int cleanup_shared_block(const char *name) {
+          return shm_unlink(name);
       }

@@ -56,8 +56,10 @@ func (h *HelpPanel) View() string {
 	features := []string{
 		"• Batch compile with gcc",
 		"• Detect banned functions",
+		"• Detect AI-like code patterns",
 		"• Run & test submissions",
 		"• Multi-process execution",
+		"• Similarity and AI detail views",
 		"• Real-time output streaming",
 		"• Export to JSON/CSV",
 	}
@@ -111,4 +113,3 @@ func RenderHelpBar(items []HelpItem) string {
 	}
 	return "  " + strings.Join(parts, "  •  ")
 }
-

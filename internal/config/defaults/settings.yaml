@@ -8,3 +8,8 @@ max_workers: 0  # 0 = use all CPUs, set to 2-4 for resource-constrained environm
 plagiarism_window_size: 6
 plagiarism_min_func_tokens: 14
 plagiarism_score_threshold: 0.6
+
+# AI detection (submission vs AI dictionary window-hash)
+ai_window_size: 6
+ai_min_func_tokens: 6
+ai_score_threshold: 0.6
