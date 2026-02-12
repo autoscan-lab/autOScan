@@ -91,6 +91,33 @@ func View(s State) string {
 	}
 	content.WriteString(thresholdSetting.View())
 
+	content.WriteString("\n\n")
+	content.WriteString(components.SubtleText.Render("AI Detection"))
+	content.WriteString("\n\n")
+
+	aiWindowSetting := components.NumberSetting{
+		Label:   "Window Size",
+		Value:   fmt.Sprintf("%d", s.Settings.AIWindowSize),
+		Focused: s.SettingsCursor == 6,
+	}
+	content.WriteString(aiWindowSetting.View())
+	content.WriteString("\n")
+
+	aiMinTokensSetting := components.NumberSetting{
+		Label:   "Min Function Tokens",
+		Value:   fmt.Sprintf("%d", s.Settings.AIMinFuncTokens),
+		Focused: s.SettingsCursor == 7,
+	}
+	content.WriteString(aiMinTokensSetting.View())
+	content.WriteString("\n")
+
+	aiThresholdSetting := components.NumberSetting{
+		Label:   "Score Threshold",
+		Value:   fmt.Sprintf("%.2f", s.Settings.AIScoreThreshold),
+		Focused: s.SettingsCursor == 8,
+	}
+	content.WriteString(aiThresholdSetting.View())
+
 	b.WriteString(box.Render(content.String()))
 
 	b.WriteString("\n\n")
@@ -131,7 +158,7 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 
 	switch msg.String() {
 	case "j", "down":
-		if result.SettingsCursor < 5 {
+		if result.SettingsCursor < 8 {
 			result.SettingsCursor++
 		}
 	case "k", "up":
@@ -172,6 +199,24 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 				}
 				config.SaveSettings(result.Settings)
 			}
+		case 6:
+			if result.Settings.AIWindowSize < 64 {
+				result.Settings.AIWindowSize++
+				config.SaveSettings(result.Settings)
+			}
+		case 7:
+			if result.Settings.AIMinFuncTokens < 1024 {
+				result.Settings.AIMinFuncTokens++
+				config.SaveSettings(result.Settings)
+			}
+		case 8:
+			if result.Settings.AIScoreThreshold < 1.0 {
+				result.Settings.AIScoreThreshold += 0.05
+				if result.Settings.AIScoreThreshold > 1.0 {
+					result.Settings.AIScoreThreshold = 1.0
+				}
+				config.SaveSettings(result.Settings)
+			}
 		}
 	case "-", "_":
 		switch result.SettingsCursor {
@@ -198,6 +243,24 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 				}
 				config.SaveSettings(result.Settings)
 			}
+		case 6:
+			if result.Settings.AIWindowSize > 1 {
+				result.Settings.AIWindowSize--
+				config.SaveSettings(result.Settings)
+			}
+		case 7:
+			if result.Settings.AIMinFuncTokens > 1 {
+				result.Settings.AIMinFuncTokens--
+				config.SaveSettings(result.Settings)
+			}
+		case 8:
+			if result.Settings.AIScoreThreshold > 0.0 {
+				result.Settings.AIScoreThreshold -= 0.05
+				if result.Settings.AIScoreThreshold < 0.0 {
+					result.Settings.AIScoreThreshold = 0.0
+				}
+				config.SaveSettings(result.Settings)
+			}
 		}
 	case "0":
 		switch result.SettingsCursor {
@@ -212,6 +275,15 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 			config.SaveSettings(result.Settings)
 		case 5:
 			result.Settings.PlagiarismScoreThreshold = 0.6
+			config.SaveSettings(result.Settings)
+		case 6:
+			result.Settings.AIWindowSize = 6
+			config.SaveSettings(result.Settings)
+		case 7:
+			result.Settings.AIMinFuncTokens = 6
+			config.SaveSettings(result.Settings)
+		case 8:
+			result.Settings.AIScoreThreshold = 0.6
 			config.SaveSettings(result.Settings)
 		}
 	case "q", "esc":

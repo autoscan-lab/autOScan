@@ -49,12 +49,10 @@ func ComputeAIDetectionForProcess(submissions []domain.Submission, srcFile strin
 
 		matches := compareSubmissionToDictionary(fp, dictFPs, cfg)
 		bestScore := 0.0
-		bestMatchID := ""
 		flagged := false
 		for _, m := range matches {
 			if m.Jaccard > bestScore {
 				bestScore = m.Jaccard
-				bestMatchID = m.EntryID
 			}
 			if m.Flagged {
 				flagged = true
@@ -68,7 +66,6 @@ func ComputeAIDetectionForProcess(submissions []domain.Submission, srcFile strin
 			FunctionCount:   fp.FunctionCount,
 			MatchCount:      len(matches),
 			BestScore:       bestScore,
-			BestMatchID:     bestMatchID,
 			Flagged:         flagged,
 			Matches:         matches,
 		})

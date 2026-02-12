@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	aipkg "github.com/felitrejos/autoscan/internal/ai"
 	"github.com/felitrejos/autoscan/internal/config"
 	"github.com/felitrejos/autoscan/internal/domain"
 	"github.com/felitrejos/autoscan/internal/engine"
@@ -143,6 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result.ComputeSimilarityFor != "" {
 				return m, m.computeSimilarityForProcess(result.ComputeSimilarityFor)
 			}
+			if result.ComputeAIDetectionFor != "" {
+				return m, m.computeAIDetectionForProcess(result.ComputeAIDetectionFor)
+			}
 			return m, result.Cmd
 		case ViewDetails:
 			state := m.buildDetailsState()
@@ -204,19 +208,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.similarityInFlight = make(map[string]bool)
 		m.similarityCursor = 0
 		m.similarityScroll = 0
+		m.aiReportsByProcess = make(map[string]AIDetectionReport)
+		m.aiStateByProcess = make(map[string]SimilarityComputeState)
+		m.aiErrorByProcess = make(map[string]string)
+		m.aiInFlight = make(map[string]bool)
+		m.aiCursor = 0
+		m.aiScroll = 0
 
-		// Initialize similarity process names from policy
 		m.similaritySelectedProc = 0
+		m.aiSelectedProc = 0
 		if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
 			m.similarityProcessNames = submissions.InitSimilarityProcesses(m.policies[m.selectedPolicy])
+			m.aiProcessNames = submissions.InitSimilarityProcesses(m.policies[m.selectedPolicy])
 		} else {
 			m.similarityProcessNames = nil
+			m.aiProcessNames = nil
 		}
 		for _, p := range m.similarityProcessNames {
 			m.similarityStateByProcess[p] = SimilarityNotStarted
 		}
+		for _, p := range m.aiProcessNames {
+			m.aiStateByProcess[p] = SimilarityNotStarted
+		}
 
 		m.resetPairDetailState()
+		m.resetAIDetailState()
 
 	case errorMsg:
 		m.runError = msg.Error()
@@ -246,6 +262,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.similarityInFlight, msg.process)
 		}
 
+	case aiDetectionStartedMsg:
+		if msg.runID == m.runID {
+			m.aiStateByProcess[msg.process] = SimilarityComputing
+			delete(m.aiErrorByProcess, msg.process)
+		}
+
+	case aiDetectionComputedMsg:
+		if msg.runID == m.runID {
+			m.aiReportsByProcess[msg.process] = msg.report
+			m.aiStateByProcess[msg.process] = SimilarityDone
+			delete(m.aiErrorByProcess, msg.process)
+			delete(m.aiInFlight, msg.process)
+		}
+
+	case aiDetectionErrorMsg:
+		if msg.runID == m.runID {
+			m.aiStateByProcess[msg.process] = SimilarityError
+			m.aiErrorByProcess[msg.process] = msg.err.Error()
+			delete(m.aiInFlight, msg.process)
+		}
+
 	case submissions.PairDetailLoadedMsg:
 		if msg.RunID == m.runID && msg.Process == m.pairDetailProcess && msg.PairIndex == m.pairDetailPairIndex {
 			m.pairDetailContentA = msg.ContentA
@@ -254,6 +291,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pairDetailLoadErr = msg.Err.Error()
 			} else {
 				m.pairDetailLoadErr = ""
+			}
+		}
+
+	case submissions.AIDetailLoadedMsg:
+		if msg.RunID == m.runID && msg.Process == m.aiDetailProcess && msg.ResultIndex == m.aiDetailResultIndex {
+			m.aiDetailContent = msg.Content
+			if msg.Err != nil {
+				m.aiDetailLoadErr = msg.Err.Error()
+			} else {
+				m.aiDetailLoadErr = ""
 			}
 		}
 
@@ -379,6 +426,11 @@ func (m Model) buildSubmissionsState() submissions.State {
 	for _, proc := range m.similarityProcessNames {
 		sourceFileByProcess[proc] = submissions.ResolveSourceFile(currentPolicy, proc)
 	}
+	for _, proc := range m.aiProcessNames {
+		if _, ok := sourceFileByProcess[proc]; !ok {
+			sourceFileByProcess[proc] = submissions.ResolveSourceFile(currentPolicy, proc)
+		}
+	}
 
 	return submissions.State{
 		Width:       m.width,
@@ -415,6 +467,15 @@ func (m Model) buildSubmissionsState() submissions.State {
 		SimilarityCursor:         m.similarityCursor,
 		SimilarityScroll:         m.similarityScroll,
 
+		AIProcessNames:     m.aiProcessNames,
+		AISelectedProc:     m.aiSelectedProc,
+		AIReportsByProcess: m.aiReportsByProcess,
+		AIStateByProcess:   m.convertAIState(),
+		AIErrorByProcess:   m.aiErrorByProcess,
+		AIInFlight:         m.aiInFlight,
+		AICursor:           m.aiCursor,
+		AIScroll:           m.aiScroll,
+
 		PairDetailOpen:        m.pairDetailOpen,
 		PairDetailProcess:     m.pairDetailProcess,
 		PairDetailPairIndex:   m.pairDetailPairIndex,
@@ -427,6 +488,14 @@ func (m Model) buildSubmissionsState() submissions.State {
 		PairDetailHScrollA:    m.pairDetailHScrollA,
 		PairDetailHScrollB:    m.pairDetailHScrollB,
 
+		AIDetailOpen:        m.aiDetailOpen,
+		AIDetailProcess:     m.aiDetailProcess,
+		AIDetailResultIndex: m.aiDetailResultIndex,
+		AIDetailContent:     m.aiDetailContent,
+		AIDetailLoadErr:     m.aiDetailLoadErr,
+		AIDetailScroll:      m.aiDetailScroll,
+		AIDetailHScroll:     m.aiDetailHScroll,
+
 		Spinner:             m.spinner.View(),
 		SourceFileByProcess: sourceFileByProcess,
 	}
@@ -435,6 +504,14 @@ func (m Model) buildSubmissionsState() submissions.State {
 func (m Model) convertSimilarityState() map[string]submissions.SimilarityComputeState {
 	result := make(map[string]submissions.SimilarityComputeState)
 	for k, v := range m.similarityStateByProcess {
+		result[k] = submissions.SimilarityComputeState(v)
+	}
+	return result
+}
+
+func (m Model) convertAIState() map[string]submissions.SimilarityComputeState {
+	result := make(map[string]submissions.SimilarityComputeState)
+	for k, v := range m.aiStateByProcess {
 		result[k] = submissions.SimilarityComputeState(v)
 	}
 	return result
@@ -453,6 +530,9 @@ func (m *Model) applySubmissionsResult(r submissions.UpdateResult) {
 	m.similaritySelectedProc = r.SimilaritySelectedProc
 	m.similarityCursor = r.SimilarityCursor
 	m.similarityScroll = r.SimilarityScroll
+	m.aiSelectedProc = r.AISelectedProc
+	m.aiCursor = r.AICursor
+	m.aiScroll = r.AIScroll
 
 	if r.SimilarityPairsByProcess != nil {
 		m.similarityPairsByProcess = r.SimilarityPairsByProcess
@@ -464,6 +544,17 @@ func (m *Model) applySubmissionsResult(r submissions.UpdateResult) {
 	}
 	if r.SimilarityErrorByProcess != nil {
 		m.similarityErrorByProcess = r.SimilarityErrorByProcess
+	}
+	if r.AIReportsByProcess != nil {
+		m.aiReportsByProcess = r.AIReportsByProcess
+	}
+	if r.AIStateByProcess != nil {
+		for k, v := range r.AIStateByProcess {
+			m.aiStateByProcess[k] = SimilarityComputeState(v)
+		}
+	}
+	if r.AIErrorByProcess != nil {
+		m.aiErrorByProcess = r.AIErrorByProcess
 	}
 
 	m.pairDetailOpen = r.PairDetailOpen
@@ -477,6 +568,13 @@ func (m *Model) applySubmissionsResult(r submissions.UpdateResult) {
 	m.pairDetailScrollB = r.PairDetailScrollB
 	m.pairDetailHScrollA = r.PairDetailHScrollA
 	m.pairDetailHScrollB = r.PairDetailHScrollB
+	m.aiDetailOpen = r.AIDetailOpen
+	m.aiDetailProcess = r.AIDetailProcess
+	m.aiDetailResultIndex = r.AIDetailResultIndex
+	m.aiDetailContent = r.AIDetailContent
+	m.aiDetailLoadErr = r.AIDetailLoadErr
+	m.aiDetailScroll = r.AIDetailScroll
+	m.aiDetailHScroll = r.AIDetailHScroll
 
 	if r.ClearResults {
 		m.clearRunResults()
@@ -665,12 +763,22 @@ func (m Model) startRun() (tea.Model, tea.Cmd) {
 	m.similarityPairsByProcess = make(map[string][]SimilarityPair)
 	m.similarityStateByProcess = make(map[string]SimilarityComputeState)
 	m.similarityErrorByProcess = make(map[string]string)
+	m.similarityInFlight = make(map[string]bool)
 	m.similarityProcessNames = nil
 	m.similaritySelectedProc = 0
 	m.similarityCursor = 0
 	m.similarityScroll = 0
+	m.aiReportsByProcess = make(map[string]AIDetectionReport)
+	m.aiStateByProcess = make(map[string]SimilarityComputeState)
+	m.aiErrorByProcess = make(map[string]string)
+	m.aiInFlight = make(map[string]bool)
+	m.aiProcessNames = nil
+	m.aiSelectedProc = 0
+	m.aiCursor = 0
+	m.aiScroll = 0
 
 	m.resetPairDetailState()
+	m.resetAIDetailState()
 
 	root := m.root
 	keepBinaries := m.settings.KeepBinaries
@@ -815,6 +923,98 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 				return similarityErrorMsg{process: process, err: err, runID: currentRunID}
 			}
 			return similarityComputedMsg{process: process, pairs: pairs, runID: currentRunID}
+		},
+	)
+}
+
+func (m Model) computeAIDetectionForProcess(process string) tea.Cmd {
+	if m.report == nil || len(m.results) == 0 {
+		return nil
+	}
+	if m.aiReportsByProcess == nil {
+		m.aiReportsByProcess = make(map[string]AIDetectionReport)
+	}
+	if m.aiStateByProcess == nil {
+		m.aiStateByProcess = make(map[string]SimilarityComputeState)
+	}
+	if m.aiErrorByProcess == nil {
+		m.aiErrorByProcess = make(map[string]string)
+	}
+	if m.aiInFlight == nil {
+		m.aiInFlight = make(map[string]bool)
+	}
+	if m.aiInFlight[process] {
+		return nil
+	}
+	if m.aiStateByProcess[process] == SimilarityComputing || m.aiStateByProcess[process] == SimilarityDone {
+		return nil
+	}
+
+	var currentPolicy *policy.Policy
+	if m.selectedPolicy >= 0 && m.selectedPolicy < len(m.policies) {
+		currentPolicy = m.policies[m.selectedPolicy]
+	}
+	srcFile := submissions.ResolveSourceFile(currentPolicy, process)
+	if srcFile == "" {
+		if len(m.results) > 0 && len(m.results[0].Submission.CFiles) > 0 {
+			srcFile = m.results[0].Submission.CFiles[0]
+		}
+	}
+	if srcFile == "" {
+		currentRunID := m.runID
+		return func() tea.Msg {
+			return aiDetectionErrorMsg{
+				process: process,
+				runID:   currentRunID,
+				err:     fmt.Errorf("no source file found for process %q. check policy configuration", process),
+			}
+		}
+	}
+
+	dictPath, err := config.AIDictionaryFile()
+	if err != nil {
+		currentRunID := m.runID
+		return func() tea.Msg {
+			return aiDetectionErrorMsg{
+				process: process,
+				runID:   currentRunID,
+				err:     fmt.Errorf("resolving ai dictionary path: %w", err),
+			}
+		}
+	}
+	dict, err := aipkg.LoadDictionary(dictPath)
+	if err != nil {
+		currentRunID := m.runID
+		return func() tea.Msg {
+			return aiDetectionErrorMsg{
+				process: process,
+				runID:   currentRunID,
+				err:     fmt.Errorf("loading ai dictionary: %w", err),
+			}
+		}
+	}
+
+	cfg := domain.CompareConfig{
+		WindowSize:     m.settings.AIWindowSize,
+		MinFuncTokens:  m.settings.AIMinFuncTokens,
+		ScoreThreshold: m.settings.AIScoreThreshold,
+	}
+
+	subs := make([]domain.Submission, len(m.results))
+	for i, res := range m.results {
+		subs[i] = res.Submission
+	}
+
+	currentRunID := m.runID
+	m.aiInFlight[process] = true
+	return tea.Batch(
+		func() tea.Msg { return aiDetectionStartedMsg{process: process, runID: currentRunID} },
+		func() tea.Msg {
+			report, err := engine.ComputeAIDetectionForProcess(subs, srcFile, dict, cfg)
+			if err != nil {
+				return aiDetectionErrorMsg{process: process, err: err, runID: currentRunID}
+			}
+			return aiDetectionComputedMsg{process: process, report: report, runID: currentRunID}
 		},
 	)
 }

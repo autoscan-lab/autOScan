@@ -133,8 +133,8 @@ func (e *CompileEngine) compile(ctx context.Context, sub domain.Submission) doma
 		return domain.NewCompileResult(false, nil, -1, "", err.Error(), time.Since(start).Milliseconds(), false)
 	}
 
-	// If they need to reference the source files. ie: ftok, semget, etc 
-	e.copySourceFiles(sub, outputDir) 
+	// Some assignments access companion source files at runtime (e.g. ftok path inputs).
+	e.copySourceFiles(sub, outputDir)
 
 	if e.policy.Run.MultiProcess != nil && e.policy.Run.MultiProcess.Enabled && len(e.policy.Run.MultiProcess.Executables) > 0 {
 		return e.compileMultiProcess(ctx, sub, outputDir, start)

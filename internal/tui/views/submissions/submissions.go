@@ -24,6 +24,7 @@ const (
 )
 
 type SimilarityPair = domain.SimilarityPairResult
+type AIDetectionReport = domain.AIDetectionReport
 
 type PairDetailLoadedMsg struct {
 	Process   string
@@ -32,6 +33,14 @@ type PairDetailLoadedMsg struct {
 	ContentB  []byte
 	Err       error
 	RunID     int64
+}
+
+type AIDetailLoadedMsg struct {
+	Process     string
+	ResultIndex int
+	Content     []byte
+	Err         error
+	RunID       int64
 }
 
 type Navigation int
@@ -79,6 +88,15 @@ type State struct {
 	SimilarityCursor         int
 	SimilarityScroll         int
 
+	AIProcessNames     []string
+	AISelectedProc     int
+	AIReportsByProcess map[string]AIDetectionReport
+	AIStateByProcess   map[string]SimilarityComputeState
+	AIErrorByProcess   map[string]string
+	AIInFlight         map[string]bool
+	AICursor           int
+	AIScroll           int
+
 	PairDetailOpen        bool
 	PairDetailProcess     string
 	PairDetailPairIndex   int
@@ -90,6 +108,14 @@ type State struct {
 	PairDetailScrollB     int
 	PairDetailHScrollA    int
 	PairDetailHScrollB    int
+
+	AIDetailOpen        bool
+	AIDetailProcess     string
+	AIDetailResultIndex int
+	AIDetailContent     []byte
+	AIDetailLoadErr     string
+	AIDetailScroll      int
+	AIDetailHScroll     int
 
 	Spinner string
 
@@ -103,6 +129,7 @@ type UpdateResult struct {
 	Nav                   Navigation
 	ClearResults          bool
 	ComputeSimilarityFor  string // Process name to compute similarity for (handlers.go will call the real function)
+	ComputeAIDetectionFor string // Process name to compute AI detection for (handlers.go will call the real function)
 }
 
 func Update(s State, msg tea.KeyMsg) UpdateResult {
@@ -112,22 +139,33 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 		return r
 	}
 
+	if s.AIDetailOpen {
+		return updateAIDetail(s, msg)
+	}
+
 	if s.PairDetailOpen {
 		return updatePairDetail(s, msg)
 	}
 
 	if msg.String() == "tab" {
 		if s.Report != nil {
-			r.SubmissionsTab = (s.SubmissionsTab + 1) % 2
+			r.SubmissionsTab = (s.SubmissionsTab + 1) % 3
 			if r.SubmissionsTab == 0 {
 				r.Cursor = 0
 				r.ScrollOffset = 0
-			} else {
+			} else if r.SubmissionsTab == 1 {
 				r.SimilarityCursor = 0
 				r.SimilarityScroll = 0
 				proc := currentSimilarityProcessName(r.State)
 				if proc != "" && r.SimilarityStateByProcess[proc] == SimilarityNotStarted {
 					r.ComputeSimilarityFor = proc
+				}
+			} else {
+				r.AICursor = 0
+				r.AIScroll = 0
+				proc := currentAIProcessName(r.State)
+				if proc != "" && r.AIStateByProcess[proc] == SimilarityNotStarted {
+					r.ComputeAIDetectionFor = proc
 				}
 			}
 		}
@@ -136,6 +174,9 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 
 	if s.SubmissionsTab == 1 {
 		return updateSimilarity(s, msg)
+	}
+	if s.SubmissionsTab == 2 {
+		return updateAIDetection(s, msg)
 	}
 
 	if s.SearchActive {
@@ -345,6 +386,156 @@ func updateSimilarity(s State, msg tea.KeyMsg) UpdateResult {
 	return r
 }
 
+func updateAIDetection(s State, msg tea.KeyMsg) UpdateResult {
+	r := UpdateResult{State: s}
+
+	switch msg.String() {
+	case "esc", "q":
+		r.Nav = NavGoHome
+		r.AIReportsByProcess = make(map[string]AIDetectionReport)
+		r.AIStateByProcess = make(map[string]SimilarityComputeState)
+		r.AIErrorByProcess = make(map[string]string)
+		return r
+	}
+
+	if len(s.AIProcessNames) == 0 {
+		return r
+	}
+
+	currentProc := currentAIProcessName(s)
+	if currentProc != "" && s.AIStateByProcess[currentProc] == SimilarityNotStarted {
+		r.ComputeAIDetectionFor = currentProc
+		return r
+	}
+
+	report := s.AIReportsByProcess[currentProc]
+	results := report.Results
+	dataRows := min(30, s.VisibleRows-1)
+	if dataRows < 6 {
+		dataRows = 6
+	}
+
+	switch msg.String() {
+	case "j", "down":
+		if len(results) == 0 {
+			return r
+		}
+		if s.AICursor < len(results)-1 {
+			r.AICursor = s.AICursor + 1
+			if r.AICursor >= s.AIScroll+dataRows {
+				r.AIScroll = s.AIScroll + 1
+			}
+		}
+	case "k", "up":
+		if len(results) == 0 {
+			return r
+		}
+		if s.AICursor > 0 {
+			r.AICursor = s.AICursor - 1
+			if r.AICursor < s.AIScroll {
+				r.AIScroll = s.AIScroll - 1
+			}
+		}
+	case "l", "right":
+		if s.AISelectedProc < len(s.AIProcessNames)-1 {
+			r.AISelectedProc = s.AISelectedProc + 1
+			r.AICursor = 0
+			r.AIScroll = 0
+			proc := currentAIProcessName(r.State)
+			if proc != "" && r.AIStateByProcess[proc] == SimilarityNotStarted {
+				r.ComputeAIDetectionFor = proc
+			}
+		}
+	case "h", "left":
+		if s.AISelectedProc > 0 {
+			r.AISelectedProc = s.AISelectedProc - 1
+			r.AICursor = 0
+			r.AIScroll = 0
+			proc := currentAIProcessName(r.State)
+			if proc != "" && r.AIStateByProcess[proc] == SimilarityNotStarted {
+				r.ComputeAIDetectionFor = proc
+			}
+		}
+	case "enter":
+		if len(results) == 0 || s.AICursor >= len(results) {
+			return r
+		}
+		selected := results[s.AICursor]
+		if selected.SubmissionIndex < 0 || selected.SubmissionIndex >= len(s.Results) {
+			return r
+		}
+
+		srcFile := report.SourceFile
+		if srcFile == "" && s.SourceFileByProcess != nil {
+			srcFile = s.SourceFileByProcess[currentProc]
+		}
+		if srcFile == "" && len(s.Results) > 0 && len(s.Results[0].Submission.CFiles) > 0 {
+			srcFile = s.Results[0].Submission.CFiles[0]
+		}
+		if srcFile == "" {
+			return r
+		}
+
+		path := filepath.Join(s.Results[selected.SubmissionIndex].Submission.Path, srcFile)
+		r.AIDetailOpen = true
+		r.AIDetailProcess = currentProc
+		r.AIDetailResultIndex = s.AICursor
+		r.AIDetailContent = nil
+		r.AIDetailLoadErr = ""
+		r.AIDetailScroll = 0
+		r.AIDetailHScroll = 0
+		r.Cmd = loadAIDetailFile(currentProc, s.AICursor, path, s.RunID)
+	}
+	return r
+}
+
+func updateAIDetail(s State, msg tea.KeyMsg) UpdateResult {
+	r := UpdateResult{State: s}
+
+	report, ok := s.AIReportsByProcess[s.AIDetailProcess]
+	if !ok || s.AIDetailResultIndex >= len(report.Results) {
+		r.AIDetailOpen = false
+		return r
+	}
+
+	const aiDetailMaxPaneHeight = 30
+	paneHeight := aiDetailMaxPaneHeight
+	if s.VisibleRows < paneHeight {
+		paneHeight = s.VisibleRows
+	}
+	if paneHeight < 8 {
+		paneHeight = 8
+	}
+
+	lines := len(strings.Split(string(s.AIDetailContent), "\n"))
+	maxScroll := max(0, lines-paneHeight)
+	contentWidth := singlePaneContentWidth(s.Width)
+	maxHScroll := max(0, maxDisplayWidthForContent(s.AIDetailContent)-contentWidth)
+
+	switch msg.String() {
+	case "esc", "q":
+		r.AIDetailOpen = false
+		return r
+	case "down":
+		if s.AIDetailScroll < maxScroll {
+			r.AIDetailScroll = s.AIDetailScroll + 1
+		}
+	case "up":
+		if s.AIDetailScroll > 0 {
+			r.AIDetailScroll = s.AIDetailScroll - 1
+		}
+	case "right":
+		if s.AIDetailHScroll < maxHScroll {
+			r.AIDetailHScroll = s.AIDetailHScroll + 1
+		}
+	case "left":
+		if s.AIDetailHScroll > 0 {
+			r.AIDetailHScroll = s.AIDetailHScroll - 1
+		}
+	}
+	return r
+}
+
 func updatePairDetail(s State, msg tea.KeyMsg) UpdateResult {
 	r := UpdateResult{State: s}
 
@@ -435,6 +626,16 @@ func currentSimilarityProcessName(s State) string {
 	return s.SimilarityProcessNames[s.SimilaritySelectedProc]
 }
 
+func currentAIProcessName(s State) string {
+	if len(s.AIProcessNames) == 0 {
+		return ""
+	}
+	if s.AISelectedProc < 0 || s.AISelectedProc >= len(s.AIProcessNames) {
+		return s.AIProcessNames[0]
+	}
+	return s.AIProcessNames[s.AISelectedProc]
+}
+
 func loadPairDetailFiles(process string, pairIndex int, pathA, pathB string, runID int64) tea.Cmd {
 	return func() tea.Msg {
 		contentA, errA := os.ReadFile(pathA)
@@ -446,6 +647,16 @@ func loadPairDetailFiles(process string, pairIndex int, pathA, pathB string, run
 			return PairDetailLoadedMsg{Process: process, PairIndex: pairIndex, ContentA: contentA, ContentB: nil, Err: errB, RunID: runID}
 		}
 		return PairDetailLoadedMsg{Process: process, PairIndex: pairIndex, ContentA: contentA, ContentB: contentB, Err: nil, RunID: runID}
+	}
+}
+
+func loadAIDetailFile(process string, resultIndex int, path string, runID int64) tea.Cmd {
+	return func() tea.Msg {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return AIDetailLoadedMsg{Process: process, ResultIndex: resultIndex, Content: nil, Err: err, RunID: runID}
+		}
+		return AIDetailLoadedMsg{Process: process, ResultIndex: resultIndex, Content: content, Err: nil, RunID: runID}
 	}
 }
 
@@ -478,7 +689,7 @@ func View(s State) string {
 	b.WriteString(components.SubtleText.Render(fmt.Sprintf("  %s", s.Root)))
 	b.WriteString("\n\n")
 
-	tabs := []string{"Results", "Similarity"}
+	tabs := []string{"Results", "Similarity", "AI Detection"}
 	var tabRow strings.Builder
 	tabRow.WriteString("  ")
 	for i, tab := range tabs {
@@ -509,10 +720,16 @@ func View(s State) string {
 		b.WriteString(renderPairDetail(s))
 		return b.String()
 	}
+	if s.AIDetailOpen {
+		b.WriteString(renderAIDetail(s))
+		return b.String()
+	}
 	if s.SubmissionsTab == 0 {
 		b.WriteString(renderResults(s))
-	} else {
+	} else if s.SubmissionsTab == 1 {
 		b.WriteString(renderSimilarity(s))
+	} else {
+		b.WriteString(renderAIDetection(s))
 	}
 
 	return b.String()
@@ -540,15 +757,30 @@ func renderHeaderBox(s State) string {
 		return statsBox.Render(stats)
 	}
 
-	if len(s.SimilarityProcessNames) == 0 {
-		return statsBox.Render("Similarity: no processes configured")
+	if s.SubmissionsTab == 1 {
+		if len(s.SimilarityProcessNames) == 0 {
+			return statsBox.Render("Similarity: no processes configured")
+		}
+	} else if s.SubmissionsTab == 2 {
+		if len(s.AIProcessNames) == 0 {
+			return statsBox.Render("AI Detection: no processes configured")
+		}
+	}
+
+	windowSize := s.Settings.PlagiarismWindowSize
+	minTokens := s.Settings.PlagiarismMinFuncTokens
+	threshold := s.Settings.PlagiarismScoreThreshold
+	if s.SubmissionsTab == 2 {
+		windowSize = s.Settings.AIWindowSize
+		minTokens = s.Settings.AIMinFuncTokens
+		threshold = s.Settings.AIScoreThreshold
 	}
 
 	line2 := fmt.Sprintf(
 		"Window size: %d   Min tokens: %d   Threshold: %.2f",
-		s.Settings.PlagiarismWindowSize,
-		s.Settings.PlagiarismMinFuncTokens,
-		s.Settings.PlagiarismScoreThreshold,
+		windowSize,
+		minTokens,
+		threshold,
 	)
 
 	return statsBox.Render(components.NormalItem.Render(line2))
@@ -715,7 +947,7 @@ func renderResults(s State) string {
 
 	b.WriteString("\n\n")
 	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{Key: "tab", Desc: "switch to similarity"},
+		{Key: "tab", Desc: "switch tabs"},
 		{Key: "↑/↓", Desc: "navigate"},
 		{Key: "enter", Desc: "details"},
 		{Key: "/", Desc: "search"},
@@ -914,10 +1146,180 @@ func renderSimilarity(s State) string {
 	b.WriteString(tableBox.Render(table.String()))
 	b.WriteString("\n\n")
 	b.WriteString(components.RenderHelpBar([]components.HelpItem{
-		{Key: "tab", Desc: "switch to results"},
+		{Key: "tab", Desc: "switch tabs"},
 		{Key: "h/l", Desc: "prev/next process"},
 		{Key: "↑/↓", Desc: "navigate"},
 		{Key: "enter", Desc: "pair detail"},
+		{Key: "esc", Desc: "back"},
+	}))
+
+	return b.String()
+}
+
+func renderAIDetection(s State) string {
+	var b strings.Builder
+
+	if s.Report == nil {
+		b.WriteString(components.SubtleText.Render("No run data available. Run the grader first."))
+		return b.String()
+	}
+
+	if len(s.AIProcessNames) == 0 {
+		b.WriteString(components.SubtleText.Render("No processes configured. Check policy configuration."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	b.WriteString("  ")
+	b.WriteString(components.SubtleText.Render("Process: "))
+	for i, name := range s.AIProcessNames {
+		if i == s.AISelectedProc {
+			b.WriteString(components.TabActive.Render(fmt.Sprintf(" %s ", name)))
+		} else {
+			b.WriteString(components.TabInactive.Render(fmt.Sprintf(" %s ", name)))
+		}
+		b.WriteString(" ")
+	}
+	b.WriteString("\n\n")
+
+	currentProc := currentAIProcessName(s)
+	report := s.AIReportsByProcess[currentProc]
+	results := report.Results
+	state := s.AIStateByProcess[currentProc]
+
+	if errText, ok := s.AIErrorByProcess[currentProc]; ok && errText != "" {
+		b.WriteString(components.WarningText.Render("AI detection error: " + errText))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	if state == SimilarityNotStarted || state == SimilarityComputing {
+		b.WriteString(components.SubtleText.Render("Computing AI detection..."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	if len(report.DictionaryErrors) > 0 {
+		b.WriteString(components.WarningText.Render(fmt.Sprintf("Dictionary entries skipped: %d", len(report.DictionaryErrors))))
+		b.WriteString("\n")
+	}
+
+	if len(results) == 0 {
+		b.WriteString(components.SubtleText.Render("No submissions found for AI detection."))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	tableBox := components.TableBoxStyle()
+
+	var table strings.Builder
+
+	padOrTrim := func(str string, w int) string {
+		str = components.TruncateToWidth(str, w)
+		if d := w - lipgloss.Width(str); d > 0 {
+			str += strings.Repeat(" ", d)
+		}
+		return str
+	}
+
+	const (
+		colRank    = 5
+		colJaccard = 9
+		colMatches = 12
+		colStatus  = 8
+	)
+	fixedCols := 2 + colRank + colJaccard + colMatches + colStatus + 5
+	colSub := s.Width - fixedCols
+	if colSub < 30 {
+		colSub = 30
+	}
+	if colSub > 64 {
+		colSub = 64
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(components.Primary)
+
+	headerLine := "  " +
+		padOrTrim("#", colRank) + " " +
+		padOrTrim("Submission", colSub) + " " +
+		padOrTrim("Jaccard", colJaccard) + " " +
+		padOrTrim("Matches", colMatches) + " " +
+		padOrTrim("Status", colStatus)
+	table.WriteString(headerStyle.Render(headerLine))
+	table.WriteString("\n")
+	table.WriteString(strings.Repeat("─", 2+colRank+1+colSub+1+colJaccard+1+colMatches+1+colStatus))
+	table.WriteString("\n")
+
+	dataRows := min(30, s.VisibleRows-1)
+	if dataRows < 6 {
+		dataRows = 6
+	}
+
+	endIdx := s.AIScroll + dataRows
+	if endIdx > len(results) {
+		endIdx = len(results)
+	}
+
+	for i := s.AIScroll; i < endIdx; i++ {
+		res := results[i]
+
+		cursor := "  "
+		if i == s.AICursor {
+			cursor = components.Highlight.Render("▶ ")
+		}
+
+		subID := res.SubmissionID
+		if s.Settings.ShortNames {
+			if idx := strings.Index(subID, "_"); idx > 0 {
+				subID = subID[:idx]
+			}
+		}
+		jacText := fmt.Sprintf("%.2f%%", res.BestScore*100)
+		totalMatches := report.DictionaryUsable
+		if totalMatches <= 0 {
+			totalMatches = report.DictionaryEntryCount
+		}
+		matchesText := fmt.Sprintf("%d/%d", res.MatchCount, totalMatches)
+
+		statusText := "OK"
+		statusRendered := components.SuccessText.Render(padOrTrim(statusText, colStatus))
+		if res.ParseError != "" {
+			statusText = "ERR"
+			statusRendered = components.ErrorText.Render(padOrTrim(statusText, colStatus))
+		} else if res.Flagged {
+			statusText = "FLAG"
+			statusRendered = components.WarningText.Render(padOrTrim(statusText, colStatus))
+		}
+
+		row := cursor +
+			padOrTrim(fmt.Sprintf("%d", i+1), colRank) + " " +
+			padOrTrim(subID, colSub) + " " +
+			padOrTrim(jacText, colJaccard) + " " +
+			padOrTrim(matchesText, colMatches) + " " +
+			statusRendered
+		table.WriteString(row)
+		table.WriteString("\n")
+	}
+
+	for i := endIdx; i < s.AIScroll+dataRows; i++ {
+		table.WriteString("\n")
+	}
+
+	footer := ""
+	if len(results) > dataRows {
+		footer = fmt.Sprintf("  Showing %d-%d of %d", s.AIScroll+1, endIdx, len(results))
+	}
+	table.WriteString(components.SubtleText.Render(footer))
+
+	b.WriteString(tableBox.Render(table.String()))
+	b.WriteString("\n\n")
+	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+		{Key: "tab", Desc: "switch tabs"},
+		{Key: "h/l", Desc: "prev/next process"},
+		{Key: "↑/↓", Desc: "navigate"},
+		{Key: "enter", Desc: "single view"},
 		{Key: "esc", Desc: "back"},
 	}))
 
@@ -1043,7 +1445,105 @@ func renderPairDetail(s State) string {
 	return b.String()
 }
 
+func renderAIDetail(s State) string {
+	var b strings.Builder
+
+	report, ok := s.AIReportsByProcess[s.AIDetailProcess]
+	if !ok || s.AIDetailResultIndex >= len(report.Results) {
+		b.WriteString(components.SubtleText.Render("No AI result selected."))
+		return b.String()
+	}
+	result := report.Results[s.AIDetailResultIndex]
+
+	if s.AIDetailLoadErr != "" {
+		b.WriteString(components.WarningText.Render("Error: " + s.AIDetailLoadErr))
+		b.WriteString("\n\n")
+		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
+		return b.String()
+	}
+	if s.AIDetailContent == nil {
+		b.WriteString(components.SubtleText.Render("Loading file..."))
+		b.WriteString("\n\n")
+		b.WriteString(components.RenderHelpBar([]components.HelpItem{{Key: "esc", Desc: "back"}}))
+		return b.String()
+	}
+
+	statsBox := components.CompactBoxStyle()
+	name := result.SubmissionID
+	if s.Settings.ShortNames {
+		if idx := strings.Index(name, "_"); idx > 0 {
+			name = name[:idx]
+		}
+	}
+	summary := fmt.Sprintf(
+		"%s   ·   Best Jaccard: %.2f%%   Matches: %d",
+		name, result.BestScore*100, result.MatchCount,
+	)
+	b.WriteString(statsBox.Render(summary))
+	b.WriteString("\n\n")
+
+	const aiDetailMaxPaneHeight = 30
+	paneHeight := min(s.VisibleRows, aiDetailMaxPaneHeight)
+	if paneHeight < 8 {
+		paneHeight = 8
+	}
+
+	contentWidth := singlePaneContentWidth(s.Width)
+	spans := allAIMatchSpans(result)
+	pane := renderCodePane(s.AIDetailContent, spans, s.AIDetailScroll, s.AIDetailHScroll, paneHeight, contentWidth)
+
+	lineStyle := components.FixedWidthStyle(contentWidth)
+	lines := strings.Split(strings.TrimSuffix(pane, "\n"), "\n")
+	for len(lines) < paneHeight {
+		lines = append(lines, strings.Repeat(" ", contentWidth))
+	}
+
+	var content strings.Builder
+	for i := 0; i < paneHeight; i++ {
+		content.WriteString(lineStyle.Render(lines[i]))
+		content.WriteString("\n")
+	}
+
+	codeBox := components.TableBoxStyle().
+		BorderForeground(components.Primary).
+		Width(contentWidth + 4).
+		Render(strings.TrimSuffix(content.String(), "\n"))
+	b.WriteString(codeBox)
+
+	spanInfo := "0 highlights"
+	if len(spans) > 0 {
+		spanInfo = fmt.Sprintf("%d highlights from %d matched entries", len(spans), len(result.Matches))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(components.RenderHelpBar([]components.HelpItem{
+		{Key: "↑/↓", Desc: "scroll"},
+		{Key: "←/→", Desc: "pan"},
+		{Key: "esc", Desc: "back"},
+	}))
+	b.WriteString(components.SubtleText.Render("  " + spanInfo))
+	return b.String()
+}
+
 const pairDetailTabWidth = 8
+
+func singlePaneContentWidth(totalWidth int) int {
+	width := totalWidth - 10
+	if width < 40 {
+		width = 40
+	}
+	return width
+}
+
+func allAIMatchSpans(result domain.AISubmissionResult) []domain.MatchSpan {
+	if len(result.Matches) == 0 {
+		return nil
+	}
+	var spans []domain.MatchSpan
+	for _, m := range result.Matches {
+		spans = append(spans, m.Spans...)
+	}
+	return spans
+}
 
 func pairDetailPaneWidths(totalWidth int) (halfWidth, contentWidth int) {
 	halfWidth = (totalWidth - 6) / 2

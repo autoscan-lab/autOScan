@@ -107,6 +107,20 @@ type (
 		err       error
 		runID     int64
 	}
+	aiDetectionStartedMsg struct {
+		process string
+		runID   int64
+	}
+	aiDetectionComputedMsg struct {
+		process string
+		report  AIDetectionReport
+		runID   int64
+	}
+	aiDetectionErrorMsg struct {
+		process string
+		err     error
+		runID   int64
+	}
 )
 
 type SimilarityComputeState int
@@ -119,6 +133,7 @@ const (
 )
 
 type SimilarityPair = domain.SimilarityPairResult
+type AIDetectionReport = domain.AIDetectionReport
 
 type Model struct {
 	currentView View
@@ -194,6 +209,15 @@ type Model struct {
 	similarityCursor         int
 	similarityScroll         int
 
+	aiProcessNames     []string
+	aiSelectedProc     int
+	aiReportsByProcess map[string]AIDetectionReport
+	aiStateByProcess   map[string]SimilarityComputeState
+	aiErrorByProcess   map[string]string
+	aiInFlight         map[string]bool
+	aiCursor           int
+	aiScroll           int
+
 	pairDetailOpen        bool
 	pairDetailProcess     string
 	pairDetailPairIndex   int
@@ -205,6 +229,14 @@ type Model struct {
 	pairDetailScrollB     int
 	pairDetailHScrollA    int
 	pairDetailHScrollB    int
+
+	aiDetailOpen        bool
+	aiDetailProcess     string
+	aiDetailResultIndex int
+	aiDetailContent     []byte
+	aiDetailLoadErr     string
+	aiDetailScroll      int
+	aiDetailHScroll     int
 
 	exportCursor int
 	statusMsg    string
@@ -226,6 +258,16 @@ func (m *Model) resetPairDetailState() {
 	m.pairDetailProcess = ""
 	m.pairDetailPairIndex = 0
 	m.resetPairDetailViewState()
+}
+
+func (m *Model) resetAIDetailState() {
+	m.aiDetailOpen = false
+	m.aiDetailProcess = ""
+	m.aiDetailResultIndex = 0
+	m.aiDetailContent = nil
+	m.aiDetailLoadErr = ""
+	m.aiDetailScroll = 0
+	m.aiDetailHScroll = 0
 }
 
 type Config struct {
@@ -289,6 +331,11 @@ func New(cfg Config) Model {
 		similarityStateByProcess: make(map[string]SimilarityComputeState),
 		similarityErrorByProcess: make(map[string]string),
 		similarityInFlight:       make(map[string]bool),
+		aiSelectedProc:           0,
+		aiReportsByProcess:       make(map[string]AIDetectionReport),
+		aiStateByProcess:         make(map[string]SimilarityComputeState),
+		aiErrorByProcess:         make(map[string]string),
+		aiInFlight:               make(map[string]bool),
 	}
 }
 

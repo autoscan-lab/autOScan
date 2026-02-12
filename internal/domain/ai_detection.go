@@ -21,7 +21,6 @@ type AISubmissionResult struct {
 	FunctionCount   int
 	MatchCount      int
 	BestScore       float64
-	BestMatchID     string
 	Flagged         bool
 	ParseError      string
 	Matches         []AIDictionaryMatch

@@ -27,6 +27,8 @@
 - **Output comparison for test cases** with highlighted diffs
 - **Similarity detection across submissions** with per-file metrics
 - **Side-by-side pair detail view** with highlighted matches and pane scrolling
+- **AI pattern detection** against dictionary fingerprints with ranked scores
+- **Single-pane AI detail view** with highlighted matched spans
 - Create and manage grading policies (single-process and multi-process modes)
 - Filter results by status (pass/fail/banned)
 - Export results to JSON or CSV
@@ -107,6 +109,14 @@ Keys: **↑/↓** navigate, **h/l** switch source file/process, **Enter** opens 
 **Pair detail view:** side-by-side code panes with highlighted spans.
 Keys: **↑/↓** scroll, **←/→** pan, **h/l** switch pane.
 
+### AI Detection View
+
+After a run, switch to the **AI Detection** tab to see submissions ranked by dictionary-match score.
+Keys: **↑/↓** navigate, **h/l** switch source file/process, **Enter** opens single-file detail, **Esc** goes back.
+
+**AI detail view:** single code pane with highlighted spans from all matched dictionary entries.
+Keys: **↑/↓** scroll, **←/→** pan.
+
 ---
 
 ## Configuration
@@ -120,6 +130,7 @@ On first run, configs are created at `~/.config/autoscan/`:
 ├── test_files/      # Bundled test input files
 ├── expected_outputs/ # Bundled expected output files
 ├── banned.yaml      # Global banned functions
+├── ai_dictionary.yaml # AI pattern dictionary
 └── settings.yaml    # User preferences
 ```
 
@@ -186,6 +197,9 @@ banned:
 - **Plagiarism Window Size** - Window size for similarity detection
 - **Plagiarism Min Func Tokens** - Minimum tokens per function to compare
 - **Plagiarism Score Threshold** - Similarity threshold for reporting
+- **AI Window Size** - Window size for AI dictionary matching
+- **AI Min Func Tokens** - Minimum tokens per function for AI detection
+- **AI Score Threshold** - AI match threshold for flagging
 
 ---
 

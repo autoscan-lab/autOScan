@@ -21,17 +21,23 @@ type Settings struct {
 	PlagiarismWindowSize     int     `yaml:"plagiarism_window_size"`
 	PlagiarismMinFuncTokens  int     `yaml:"plagiarism_min_func_tokens"`
 	PlagiarismScoreThreshold float64 `yaml:"plagiarism_score_threshold"`
+	AIWindowSize             int     `yaml:"ai_window_size"`
+	AIMinFuncTokens          int     `yaml:"ai_min_func_tokens"`
+	AIScoreThreshold         float64 `yaml:"ai_score_threshold"`
 }
 
 // DefaultSettings returns the default settings
 func DefaultSettings() Settings {
 	return Settings{
 		ShortNames:               true,
-		KeepBinaries:             false,
+		KeepBinaries:             true,
 		MaxWorkers:               0, // 0 = use all CPUs
 		PlagiarismWindowSize:     6,
 		PlagiarismMinFuncTokens:  14,
 		PlagiarismScoreThreshold: 0.6,
+		AIWindowSize:             6,
+		AIMinFuncTokens:          6,
+		AIScoreThreshold:         0.6,
 	}
 }
 
@@ -158,7 +164,7 @@ func LoadSettings() (Settings, error) {
 		return DefaultSettings(), err
 	}
 
-	var settings Settings
+	settings := DefaultSettings()
 	if err := yaml.Unmarshal(data, &settings); err != nil {
 		return DefaultSettings(), err
 	}
@@ -188,12 +194,10 @@ func Init() error {
 		return fmt.Errorf("getting config dir: %w", err)
 	}
 
-	// Create config directory
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
 
-	// Copy embedded defaults
 	err = fs.WalkDir(defaultsFS, "defaults", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
