@@ -29,6 +29,7 @@ const tagline = "OS Lab Submission Grader"
 
 type State struct {
 	Width         int
+	MenuWidth     int
 	MenuItem      int
 	ConfirmDelete bool
 	PolicyCount   int
@@ -58,16 +59,12 @@ type UpdateResult struct {
 func View(s State) string {
 	var b strings.Builder
 
-	contentWidth := s.Width - 4
-	if contentWidth < 80 {
-		contentWidth = 80
-	}
-	menuWidth := contentWidth * 55 / 100 // 55% for menu
+	menuWidth := s.MenuWidth
 	if menuWidth < 45 {
 		menuWidth = 45
 	}
 
-	logoStyled := components.LogoStyle.Render(logo)
+	logoStyled := renderGradientLogo(logo)
 	taglineStyled := components.SubtleText.Render("     " + tagline)
 	animationBox := lipgloss.NewStyle().
 		Width(20).
@@ -80,6 +77,11 @@ func View(s State) string {
 		logoWithTagline,
 		lipgloss.NewStyle().PaddingLeft(4).Render(animationBox),
 	)
+	topWidth := lipgloss.Width(topSection)
+	maxMenuWidthForHeader := topWidth - 2
+	if maxMenuWidthForHeader >= 45 && menuWidth > maxMenuWidthForHeader {
+		menuWidth = maxMenuWidthForHeader
+	}
 
 	b.WriteString(topSection)
 	b.WriteString("\n\n")
@@ -117,14 +119,9 @@ func View(s State) string {
 		menu.WriteString(components.ConfirmDialog("Remove autoscan and all configs?"))
 	}
 
-	menuRendered := menuBox.Render(menu.String())
-	bottomSection := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		menuRendered,
-		lipgloss.NewStyle().MarginLeft(2).Render(s.HelpPanelView),
-	)
-
-	b.WriteString(bottomSection)
+	b.WriteString(s.HelpPanelView)
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().MarginTop(1).Render(menuBox.Render(menu.String())))
 	b.WriteString("\n\n")
 	b.WriteString(components.SubtleText.Render("  Use ↑/↓ to navigate, Enter to select"))
 
@@ -188,4 +185,55 @@ func Update(s State, msg tea.KeyMsg) UpdateResult {
 	}
 
 	return result
+}
+
+type rgb struct {
+	r int
+	g int
+	b int
+}
+
+func renderGradientLogo(logoText string) string {
+	lines := strings.Split(strings.Trim(logoText, "\n"), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+
+	top := rgb{r: 147, g: 197, b: 253}
+	mid := rgb{r: 96, g: 165, b: 250}
+	bottom := rgb{r: 30, g: 64, b: 175}
+
+	var b strings.Builder
+	last := len(lines) - 1
+	for i, line := range lines {
+		t := 0.0
+		if last > 0 {
+			t = float64(i) / float64(last)
+		}
+
+		var c rgb
+		if t <= 0.5 {
+			c = mix(top, mid, t*2)
+		} else {
+			c = mix(mid, bottom, (t-0.5)*2)
+		}
+
+		style := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(fmt.Sprintf("#%02X%02X%02X", c.r, c.g, c.b)))
+		b.WriteString(style.Render(line))
+		if i < last {
+			b.WriteByte('\n')
+		}
+	}
+
+	return b.String()
+}
+
+func mix(a, b rgb, t float64) rgb {
+	return rgb{
+		r: int(float64(a.r) + (float64(b.r)-float64(a.r))*t),
+		g: int(float64(a.g) + (float64(b.g)-float64(a.g))*t),
+		b: int(float64(a.b) + (float64(b.b)-float64(a.b))*t),
+	}
 }

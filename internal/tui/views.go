@@ -18,23 +18,13 @@ func (m Model) View() string {
 
 	switch m.currentView {
 	case ViewHome:
-		contentWidth := m.width - 4
-		if contentWidth < 80 {
-			contentWidth = 80
-		}
-		menuWidth := contentWidth * 55 / 100
-		if menuWidth < 45 {
-			menuWidth = 45
-		}
-		helpPanelWidth := contentWidth - menuWidth - 4
-		if helpPanelWidth < 30 {
-			helpPanelWidth = 30
-		}
-		m.helpPanel.SetWidth(helpPanelWidth)
+		menuWidth := homeLayout(m.width)
+		m.helpPanel.SetWidth(menuWidth)
 		m.helpPanel.SetPolicyCount(len(m.policies))
 
 		content = home.View(home.State{
 			Width:         m.width,
+			MenuWidth:     menuWidth,
 			MenuItem:      int(m.menuItem),
 			ConfirmDelete: m.confirmDelete,
 			PolicyCount:   len(m.policies),
@@ -97,23 +87,13 @@ func (m Model) View() string {
 			Report:       m.report,
 		})
 	default:
-		contentWidth := m.width - 4
-		if contentWidth < 80 {
-			contentWidth = 80
-		}
-		menuWidth := contentWidth * 55 / 100
-		if menuWidth < 45 {
-			menuWidth = 45
-		}
-		helpPanelWidth := contentWidth - menuWidth - 4
-		if helpPanelWidth < 30 {
-			helpPanelWidth = 30
-		}
-		m.helpPanel.SetWidth(helpPanelWidth)
+		menuWidth := homeLayout(m.width)
+		m.helpPanel.SetWidth(menuWidth)
 		m.helpPanel.SetPolicyCount(len(m.policies))
 
 		content = home.View(home.State{
 			Width:         m.width,
+			MenuWidth:     menuWidth,
 			MenuItem:      int(m.menuItem),
 			ConfirmDelete: m.confirmDelete,
 			PolicyCount:   len(m.policies),
@@ -131,3 +111,19 @@ func (m Model) View() string {
 	)
 }
 
+func homeLayout(totalWidth int) (menuWidth int) {
+	contentWidth := totalWidth - 4
+	if contentWidth < 80 {
+		contentWidth = 80
+	}
+
+	menuWidth = contentWidth * 70 / 100
+	if menuWidth > 86 {
+		menuWidth = 86
+	}
+	if menuWidth < 60 {
+		menuWidth = 60
+	}
+
+	return menuWidth
+}
