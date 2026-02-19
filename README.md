@@ -15,6 +15,10 @@
   <img src="screenshots/autoscan.png" alt="autOScan Screenshot" />
 </p>
 
+<p align="center">
+  <a href="https://autoscan-web.vercel.app">autoscan-web.vercel.app</a>
+</p>
+
 ---
 
 ## Features
