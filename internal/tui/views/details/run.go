@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felitrejos/autoscan/internal/domain"
+	"github.com/felitrejos/autoscan-engine/pkg/domain"
 	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 

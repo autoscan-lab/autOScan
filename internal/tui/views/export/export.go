@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/felitrejos/autoscan/internal/domain"
-	exportpkg "github.com/felitrejos/autoscan/internal/export"
+	"github.com/felitrejos/autoscan-engine/pkg/domain"
+	exportpkg "github.com/felitrejos/autoscan-engine/pkg/export"
 	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 

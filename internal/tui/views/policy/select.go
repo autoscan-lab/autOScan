@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/felitrejos/autoscan/internal/policy"
+	"github.com/felitrejos/autoscan-engine/pkg/policy"
 	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 

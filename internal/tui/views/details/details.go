@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felitrejos/autoscan/internal/domain"
-	"github.com/felitrejos/autoscan/internal/policy"
+	"github.com/felitrejos/autoscan-engine/pkg/domain"
+	"github.com/felitrejos/autoscan-engine/pkg/policy"
 	"github.com/felitrejos/autoscan/internal/tui/components"
 )
 
@@ -73,7 +73,7 @@ type UpdateResult struct {
 
 	// Execution commands (handlers.go interprets these)
 	ExecuteSubmission   bool
-	ExecuteTestCase     int  // -1 = none, 0+ = test case index
+	ExecuteTestCase     int // -1 = none, 0+ = test case index
 	ExecuteMultiProcess bool
 	ExecuteScenario     int // -1 = none, 0+ = scenario index
 	CancelExecution     bool
