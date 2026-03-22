@@ -2,15 +2,15 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felitrejos/autoscan/internal/tui/components"
-	"github.com/felitrejos/autoscan/internal/tui/views/banned"
-	"github.com/felitrejos/autoscan/internal/tui/views/details"
-	"github.com/felitrejos/autoscan/internal/tui/views/directory"
-	exportview "github.com/felitrejos/autoscan/internal/tui/views/export"
-	"github.com/felitrejos/autoscan/internal/tui/views/home"
-	policyview "github.com/felitrejos/autoscan/internal/tui/views/policy"
-	"github.com/felitrejos/autoscan/internal/tui/views/settings"
-	"github.com/felitrejos/autoscan/internal/tui/views/submissions"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/banned"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/details"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/directory"
+	exportview "github.com/autoscan-lab/autoscan/internal/tui/views/export"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/home"
+	policyview "github.com/autoscan-lab/autoscan/internal/tui/views/policy"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/settings"
+	"github.com/autoscan-lab/autoscan/internal/tui/views/submissions"
 )
 
 func (m Model) View() string {

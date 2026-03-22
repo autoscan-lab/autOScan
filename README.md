@@ -42,9 +42,9 @@
 
 ## Installation
 
-**Supported Platforms:** macOS (arm64), Linux (amd64) and Windows (amd64)
+**Supported Platforms:** macOS (arm64), Linux (amd64)
 
-Download the appropriate binary from [Releases](https://github.com/felitrejos/autOScan/releases):
+Download the appropriate binary from [Releases](https://github.com/autoscan-lab/autOScan/releases):
 
 **macOS:**
 ```bash
@@ -58,17 +58,12 @@ chmod +x autoscan-linux-amd64
 ./autoscan-linux-amd64
 ```
 
-**Windows:**
-```bash
-NOT TESTED YET
-```
-
 On first run, it auto-installs to `~/.local/bin/autoscan` and prompts you to add to PATH if needed.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/felitrejos/autOScan.git
+git clone https://github.com/autoscan-lab/autOScan.git
 cd autOScan
 make install
 ```

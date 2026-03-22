@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/felitrejos/autoscan/internal/tui/components"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
 )
 
 func renderFilesTab(s State) string {

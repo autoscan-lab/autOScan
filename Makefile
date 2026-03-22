@@ -28,11 +28,4 @@ release: clean
 	@echo ""
 	@ls -lh $(DIST)/
 
-windows:
-	@mkdir -p $(DIST)
-	@echo "Building Windows amd64..."
-	go build -o $(DIST)/$(BINARY)-windows-amd64.exe ./cmd/autoscan
-	@echo ""
-	@ls -lh $(DIST)/
-
-.PHONY: build install uninstall clean release windows
+.PHONY: build install uninstall clean release

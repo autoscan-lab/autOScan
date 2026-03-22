@@ -7,12 +7,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felitrejos/autoscan-engine/pkg/domain"
-	"github.com/felitrejos/autoscan-engine/pkg/engine"
-	"github.com/felitrejos/autoscan-engine/pkg/policy"
-	"github.com/felitrejos/autoscan/internal/config"
-	"github.com/felitrejos/autoscan/internal/tui/components"
-	policyview "github.com/felitrejos/autoscan/internal/tui/views/policy"
+	"github.com/autoscan-lab/autoscan-engine/pkg/domain"
+	"github.com/autoscan-lab/autoscan-engine/pkg/engine"
+	"github.com/autoscan-lab/autoscan-engine/pkg/policy"
+	"github.com/autoscan-lab/autoscan/internal/config"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
+	policyview "github.com/autoscan-lab/autoscan/internal/tui/views/policy"
 )
 
 type View int

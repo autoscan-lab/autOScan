@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/felitrejos/autoscan/internal/tui/components"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
 )
 
 func renderBannedTab(s State) string {

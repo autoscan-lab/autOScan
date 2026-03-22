@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/felitrejos/autoscan-engine/pkg/domain"
-	"github.com/felitrejos/autoscan/internal/tui/components"
+	"github.com/autoscan-lab/autoscan-engine/pkg/domain"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
 )
 
 func renderOutputMatchLabel(status domain.OutputMatchStatus, diffCount int, diffSuffix string) string {

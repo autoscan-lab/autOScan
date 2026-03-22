@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/felitrejos/autoscan/internal/app"
+	"github.com/autoscan-lab/autoscan/internal/app"
 )
 
 func main() {

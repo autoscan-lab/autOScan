@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/felitrejos/autoscan-engine/pkg/policy"
-	"github.com/felitrejos/autoscan/internal/tui/components"
+	"github.com/autoscan-lab/autoscan-engine/pkg/policy"
+	"github.com/autoscan-lab/autoscan/internal/tui/components"
 )
 
 type SelectState struct {

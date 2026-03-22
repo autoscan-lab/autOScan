@@ -2,4 +2,4 @@
 
 ## Low Priority
 
-- [ ] **Valgrind Integration** - Memory leak detection (pass/fail)
+- [ ] **Valgrind Integration** - Memory leak detection
