@@ -9,7 +9,6 @@ on:
       engine_tag:
         description: Engine release tag to apply (for example: v1.2.1)
         required: true
-        type: string
 
 permissions:
   contents: write
@@ -31,7 +30,7 @@ jobs:
       - name: Resolve engine tag
         id: resolve
         run: |
-          TAG="${{ github.event.client_payload.engine_tag || github.event.inputs.engine_tag }}"
+          TAG="$(jq -r '.client_payload.engine_tag // .inputs.engine_tag // empty' "$GITHUB_EVENT_PATH")"
           if [ -z "$TAG" ]; then
             echo "Missing engine tag."
             exit 1
