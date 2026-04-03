@@ -1,0 +1,67 @@
+name: Bump Engine Module
+
+on:
+  repository_dispatch:
+    types:
+      - engine_release
+  workflow_dispatch:
+    inputs:
+      engine_tag:
+        description: Engine release tag to apply (for example: v1.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve engine tag
+        id: resolve
+        run: |
+          TAG="${{ github.event.client_payload.engine_tag || inputs.engine_tag }}"
+          if [ -z "$TAG" ]; then
+            echo "Missing engine tag."
+            exit 1
+          fi
+          echo "engine_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Bump engine module
+        id: update
+        env:
+          ENGINE_TAG: ${{ steps.resolve.outputs.engine_tag }}
+        run: |
+          go get github.com/autoscan-lab/autoscan-engine@"$ENGINE_TAG"
+          go mod tidy
+          if git diff --quiet -- go.mod go.sum; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: bump autoscan-engine to ${{ steps.resolve.outputs.engine_tag }}"
+          branch: "chore/bump-engine-${{ steps.resolve.outputs.engine_tag }}"
+          delete-branch: true
+          title: "chore: bump autoscan-engine to ${{ steps.resolve.outputs.engine_tag }}"
+          body: |
+            Automated engine module bump.
+
+            - Source: `autoscan-lab/autOScan-engine`
+            - New engine tag: `${{ steps.resolve.outputs.engine_tag }}`
+            - Updated files: `go.mod`, `go.sum`
