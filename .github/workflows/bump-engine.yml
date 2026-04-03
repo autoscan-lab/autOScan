@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       engine_tag:
-        description: Engine release tag to apply (for example: v1.2.1)
+        description: "Engine release tag to apply (for example: v1.2.1)"
         required: true
 
 permissions:
