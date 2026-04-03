@@ -31,7 +31,7 @@ jobs:
       - name: Resolve engine tag
         id: resolve
         run: |
-          TAG="${{ github.event.client_payload.engine_tag || inputs.engine_tag }}"
+          TAG="${{ github.event.client_payload.engine_tag || github.event.inputs.engine_tag }}"
           if [ -z "$TAG" ]; then
             echo "Missing engine tag."
             exit 1
