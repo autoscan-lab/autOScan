@@ -365,8 +365,13 @@ func updateSimilarity(s State, msg tea.KeyMsg) UpdateResult {
 		if srcFile == "" {
 			return r
 		}
-		pathA := filepath.Join(s.Results[pair.AIndex].Submission.Path, srcFile)
-		pathB := filepath.Join(s.Results[pair.BIndex].Submission.Path, srcFile)
+		subA, okA := findResultBySubmissionID(s.Results, pair.A)
+		subB, okB := findResultBySubmissionID(s.Results, pair.B)
+		if !okA || !okB {
+			return r
+		}
+		pathA := filepath.Join(subA.Submission.Path, srcFile)
+		pathB := filepath.Join(subB.Submission.Path, srcFile)
 		r.PairDetailOpen = true
 		r.PairDetailProcess = currentProc
 		r.PairDetailPairIndex = s.SimilarityCursor
@@ -406,7 +411,7 @@ func updateAIDetection(s State, msg tea.KeyMsg) UpdateResult {
 	}
 
 	report := s.AIReportsByProcess[currentProc]
-	results := report.Results
+	results := report.Submissions
 	dataRows := min(30, s.VisibleRows-1)
 	if dataRows < 6 {
 		dataRows = 6
@@ -458,7 +463,8 @@ func updateAIDetection(s State, msg tea.KeyMsg) UpdateResult {
 			return r
 		}
 		selected := results[s.AICursor]
-		if selected.SubmissionIndex < 0 || selected.SubmissionIndex >= len(s.Results) {
+		sub, ok := findResultBySubmissionID(s.Results, selected.SubmissionID)
+		if !ok {
 			return r
 		}
 
@@ -473,7 +479,7 @@ func updateAIDetection(s State, msg tea.KeyMsg) UpdateResult {
 			return r
 		}
 
-		path := filepath.Join(s.Results[selected.SubmissionIndex].Submission.Path, srcFile)
+		path := filepath.Join(sub.Submission.Path, srcFile)
 		r.AIDetailOpen = true
 		r.AIDetailProcess = currentProc
 		r.AIDetailResultIndex = s.AICursor
@@ -490,7 +496,7 @@ func updateAIDetail(s State, msg tea.KeyMsg) UpdateResult {
 	r := UpdateResult{State: s}
 
 	report, ok := s.AIReportsByProcess[s.AIDetailProcess]
-	if !ok || s.AIDetailResultIndex >= len(report.Results) {
+	if !ok || s.AIDetailResultIndex >= len(report.Submissions) {
 		r.AIDetailOpen = false
 		return r
 	}
@@ -1069,7 +1075,7 @@ func renderSimilarity(s State) string {
 
 	for i := s.SimilarityScroll; i < endIdx; i++ {
 		p := pairs[i]
-		res := p.Result
+		res := p.PlagiarismResult
 
 		cursor := "  "
 		if i == s.SimilarityCursor {
@@ -1077,8 +1083,8 @@ func renderSimilarity(s State) string {
 		}
 
 		rank := i + 1
-		aID := s.Results[p.AIndex].Submission.ID
-		bID := s.Results[p.BIndex].Submission.ID
+		aID := p.A
+		bID := p.B
 		if s.Settings.ShortNames {
 			if idx := strings.Index(aID, "_"); idx > 0 {
 				aID = aID[:idx]
@@ -1180,7 +1186,7 @@ func renderAIDetection(s State) string {
 
 	currentProc := currentAIProcessName(s)
 	report := s.AIReportsByProcess[currentProc]
-	results := report.Results
+	results := report.Submissions
 	state := s.AIStateByProcess[currentProc]
 
 	if errText, ok := s.AIErrorByProcess[currentProc]; ok && errText != "" {
@@ -1335,7 +1341,7 @@ func renderPairDetail(s State) string {
 		return b.String()
 	}
 	pair := pairs[s.PairDetailPairIndex]
-	res := pair.Result
+	res := pair.PlagiarismResult
 
 	if s.PairDetailLoadErr != "" {
 		b.WriteString(components.WarningText.Render("Error: " + s.PairDetailLoadErr))
@@ -1351,8 +1357,8 @@ func renderPairDetail(s State) string {
 	}
 
 	statsBox := components.CompactBoxStyle()
-	nameA := s.Results[pair.AIndex].Submission.ID
-	nameB := s.Results[pair.BIndex].Submission.ID
+	nameA := pair.A
+	nameB := pair.B
 	if s.Settings.ShortNames {
 		if idx := strings.Index(nameA, "_"); idx > 0 {
 			nameA = nameA[:idx]
@@ -1445,11 +1451,11 @@ func renderAIDetail(s State) string {
 	var b strings.Builder
 
 	report, ok := s.AIReportsByProcess[s.AIDetailProcess]
-	if !ok || s.AIDetailResultIndex >= len(report.Results) {
+	if !ok || s.AIDetailResultIndex >= len(report.Submissions) {
 		b.WriteString(components.SubtleText.Render("No AI result selected."))
 		return b.String()
 	}
-	result := report.Results[s.AIDetailResultIndex]
+	result := report.Submissions[s.AIDetailResultIndex]
 
 	if s.AIDetailLoadErr != "" {
 		b.WriteString(components.WarningText.Render("Error: " + s.AIDetailLoadErr))
@@ -1730,4 +1736,13 @@ func mergeRanges(ranges [][2]int) [][2]int {
 	}
 	result = append(result, [2]int{cur.start, cur.end})
 	return result
+}
+
+func findResultBySubmissionID(results []domain.SubmissionResult, id string) (domain.SubmissionResult, bool) {
+	for _, result := range results {
+		if result.Submission.ID == id {
+			return result, true
+		}
+	}
+	return domain.SubmissionResult{}, false
 }

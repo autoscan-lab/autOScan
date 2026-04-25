@@ -897,11 +897,11 @@ func (m Model) computeSimilarityForProcess(process string) tea.Cmd {
 	return tea.Batch(
 		func() tea.Msg { return similarityStartedMsg{process: process, runID: currentRunID} },
 		func() tea.Msg {
-			pairs, err := engine.ComputeSimilarityForProcess(submissions, srcFile, cfg)
+			report, err := engine.ComputeSimilarityForProcess(submissions, srcFile, cfg)
 			if err != nil {
 				return similarityErrorMsg{process: process, err: err, runID: currentRunID}
 			}
-			return similarityComputedMsg{process: process, pairs: pairs, runID: currentRunID}
+			return similarityComputedMsg{process: process, pairs: report.Pairs, runID: currentRunID}
 		},
 	)
 }
