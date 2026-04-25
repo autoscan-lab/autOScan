@@ -25,7 +25,7 @@ const logo = `
 ██║  ██║╚██████╔╝   ██║   ╚██████╔╝███████║╚██████╗██║  ██║██║ ╚████║
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝`
 
-const tagline = "OS Lab Submission Grader"
+const tagline = "C Lab Submission Grader"
 
 type State struct {
 	Width         int

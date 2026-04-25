@@ -66,7 +66,7 @@ func (h *HelpPanel) View() string {
 	var left strings.Builder
 	left.WriteString(titleStyle.Render("Quick Reference"))
 	left.WriteString("\n")
-	for _, line := range wrapWords("Fast checks for OS lab C submissions.", leftW) {
+	for _, line := range wrapWords("Fast checks for C lab submissions.", leftW) {
 		left.WriteString(descStyle.Render(line))
 		left.WriteString("\n")
 	}
