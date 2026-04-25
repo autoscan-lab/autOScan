@@ -3,16 +3,16 @@ package tui
 import (
 	"context"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/autoscan-lab/autoscan-engine/pkg/domain"
 	"github.com/autoscan-lab/autoscan-engine/pkg/engine"
 	"github.com/autoscan-lab/autoscan-engine/pkg/policy"
 	"github.com/autoscan-lab/autoscan/internal/config"
 	"github.com/autoscan-lab/autoscan/internal/tui/components"
 	policyview "github.com/autoscan-lab/autoscan/internal/tui/views/policy"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type View int
@@ -27,7 +27,6 @@ const (
 	ViewDirectoryInput
 	ViewSubmissions
 	ViewDetails
-	ViewExport
 )
 
 const (
@@ -76,7 +75,6 @@ type (
 	}
 	runCompleteMsg        domain.RunReport
 	errorMsg              error
-	exportDoneMsg         struct{ format, path string }
 	uninstallDoneMsg      struct{}
 	bannedListLoadedMsg   []string
 	bannedListSavedMsg    struct{}
@@ -238,8 +236,7 @@ type Model struct {
 	aiDetailScroll      int
 	aiDetailHScroll     int
 
-	exportCursor int
-	statusMsg    string
+	statusMsg string
 }
 
 func (m *Model) resetPairDetailViewState() {

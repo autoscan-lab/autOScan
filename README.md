@@ -32,7 +32,6 @@
 - Compare output against expected files (diff view)
 - Similarity detection across submissions
 - AI-pattern detection against a configurable dictionary
-- Export reports to JSON/CSV
 
 ---
 
@@ -77,7 +76,7 @@ autoscan
 1. Choose **Run Grader**.
 2. Pick a policy.
 3. Select the submissions folder.
-4. Review results, run tests if needed, and export JSON/CSV.
+4. Review results and run tests if needed.
 
 ---
 
@@ -175,15 +174,6 @@ The **Run** tab supports:
 - Expected output diff checks (`expected_output_file` / `expected_outputs`)
 
 Requirement: enable `keep_binaries` before grading if you want to execute compiled programs in detail view.
-
----
-
-## Export
-
-Exports are written to the current working directory:
-
-- JSON
-- CSV
 
 ---
 

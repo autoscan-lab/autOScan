@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/autoscan-lab/autoscan-engine/pkg/domain"
 	"github.com/autoscan-lab/autoscan/internal/config"
 	"github.com/autoscan-lab/autoscan/internal/tui/components"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type SimilarityComputeState int
@@ -49,7 +49,6 @@ const (
 	NavNone Navigation = iota
 	NavGoHome
 	NavGoDetails
-	NavGoExport
 	NavStartRun
 )
 
@@ -275,8 +274,6 @@ func updateResults(s State, msg tea.KeyMsg) UpdateResult {
 		r.ScrollOffset = 0
 	case "r":
 		r.Nav = NavStartRun
-	case "e":
-		r.Nav = NavGoExport
 	case "q":
 		r.Nav = NavGoHome
 	}
@@ -953,7 +950,6 @@ func renderResults(s State) string {
 		{Key: "/", Desc: "search"},
 		{Key: "f", Desc: "filter"},
 		{Key: "r", Desc: "re-run"},
-		{Key: "e", Desc: "export"},
 		{Key: "esc", Desc: "clear/back"},
 	}))
 

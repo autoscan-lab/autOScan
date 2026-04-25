@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	aipkg "github.com/autoscan-lab/autoscan-engine/pkg/ai"
 	"github.com/autoscan-lab/autoscan-engine/pkg/domain"
 	"github.com/autoscan-lab/autoscan-engine/pkg/engine"
@@ -18,11 +16,12 @@ import (
 	"github.com/autoscan-lab/autoscan/internal/tui/views/banned"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/details"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/directory"
-	exportview "github.com/autoscan-lab/autoscan/internal/tui/views/export"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/home"
 	policyview "github.com/autoscan-lab/autoscan/internal/tui/views/policy"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/settings"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/submissions"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -135,9 +134,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailScroll = 0
 				m.clearRunResults()
 				m.executor = nil
-			case submissions.NavGoExport:
-				m.currentView = ViewExport
-				m.exportCursor = 0
 			case submissions.NavStartRun:
 				return m.startRun()
 			}
@@ -152,20 +148,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			state := m.buildDetailsState()
 			result := details.Update(state, msg)
 			return m.applyDetailsResult(result)
-		case ViewExport:
-			result := exportview.Update(exportview.State{
-				Width:        m.width,
-				ExportCursor: m.exportCursor,
-				Report:       m.report,
-			}, msg)
-			m.exportCursor = result.ExportCursor
-			if result.GoBack {
-				m.currentView = ViewSubmissions
-			}
-			if result.DoExport && m.report != nil {
-				return m, exportview.DoExport(*m.report, m.exportCursor)
-			}
-			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -237,9 +219,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.runError = msg.Error()
 		m.isRunning = false
-
-	case exportview.DoneMsg:
-		m.statusMsg = fmt.Sprintf("Exported to %s", msg.Path)
 
 	case similarityStartedMsg:
 		if msg.runID == m.runID {

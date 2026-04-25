@@ -1,16 +1,15 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	"github.com/autoscan-lab/autoscan/internal/tui/components"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/banned"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/details"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/directory"
-	exportview "github.com/autoscan-lab/autoscan/internal/tui/views/export"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/home"
 	policyview "github.com/autoscan-lab/autoscan/internal/tui/views/policy"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/settings"
 	"github.com/autoscan-lab/autoscan/internal/tui/views/submissions"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) View() string {
@@ -80,12 +79,6 @@ func (m Model) View() string {
 		content = submissions.View(m.buildSubmissionsState())
 	case ViewDetails:
 		content = details.View(m.buildDetailsState())
-	case ViewExport:
-		content = exportview.View(exportview.State{
-			Width:        m.width,
-			ExportCursor: m.exportCursor,
-			Report:       m.report,
-		})
 	default:
 		menuWidth := homeLayout(m.width)
 		m.helpPanel.SetWidth(menuWidth)
