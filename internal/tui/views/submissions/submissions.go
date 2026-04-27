@@ -1023,12 +1023,11 @@ func renderSimilarity(s State) string {
 
 	const (
 		colRank    = 5
-		colJac     = 9
-		colPerFunc = 9
+		colSim     = 10
 		colMatches = 13
 		colStatus  = 8
 	)
-	fixedCols := 2 + colRank + colJac + colPerFunc + colMatches + colStatus + 7
+	fixedCols := 2 + colRank + colSim + colMatches + colStatus + 6
 	availForNames := s.Width - fixedCols
 	colSub := 20
 	colSubB := 20
@@ -1054,13 +1053,12 @@ func renderSimilarity(s State) string {
 		padOrTrim("#", colRank) + " " +
 		padOrTrim("Submission A", colSub) + " " +
 		padOrTrim("Submission B", colSubB) + " " +
-		padOrTrim("Jaccard", colJac) + " " +
-		padOrTrim("Per-func", colPerFunc) + " " +
+		padOrTrim("Similarity", colSim) + " " +
 		padOrTrim("Matches", colMatches) + " " +
 		padOrTrim("Status", colStatus)
 	table.WriteString(headerStyle.Render(headerLine))
 	table.WriteString("\n")
-	table.WriteString(strings.Repeat("─", 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus))
+	table.WriteString(strings.Repeat("─", 2+colRank+1+colSub+1+colSubB+1+colSim+1+colMatches+1+colStatus))
 	table.WriteString("\n")
 
 	dataRows := min(30, s.VisibleRows-1)
@@ -1114,8 +1112,7 @@ func renderSimilarity(s State) string {
 		}
 
 		matchesText := fmt.Sprintf("%d/%d", res.WindowMatches, res.WindowUnion)
-		jacText := fmt.Sprintf("%.2f%%", res.WindowJaccard*100)
-		perFuncText := fmt.Sprintf("%.2f%%", res.PerFuncSimilarity*100)
+		simText := fmt.Sprintf("%.2f%%", res.SimilarityPercent)
 
 		statusPadded := padOrTrim(statusText, colStatus)
 		statusRendered := components.SuccessText.Render(statusPadded)
@@ -1127,8 +1124,7 @@ func renderSimilarity(s State) string {
 			padOrTrim(fmt.Sprintf("%d", rank), colRank) + " " +
 			padOrTrim(aID, colSub) + " " +
 			padOrTrim(bID, colSubB) + " " +
-			padOrTrim(jacText, colJac) + " " +
-			padOrTrim(perFuncText, colPerFunc) + " " +
+			padOrTrim(simText, colSim) + " " +
 			padOrTrim(matchesText, colMatches) + " " +
 			statusRendered
 		table.WriteString(row)
@@ -1143,7 +1139,7 @@ func renderSimilarity(s State) string {
 	if len(pairs) > dataRows {
 		footer = fmt.Sprintf("  Showing %d-%d of %d", s.SimilarityScroll+1, endIdx, len(pairs))
 	}
-	table.WriteString(components.SubtleText.Render(padOrTrim(footer, 2+colRank+1+colSub+1+colSubB+1+colJac+1+colPerFunc+1+colMatches+1+colStatus)))
+	table.WriteString(components.SubtleText.Render(padOrTrim(footer, 2+colRank+1+colSub+1+colSubB+1+colSim+1+colMatches+1+colStatus)))
 
 	b.WriteString(tableBox.Render(table.String()))
 	b.WriteString("\n\n")
@@ -1368,9 +1364,9 @@ func renderPairDetail(s State) string {
 		}
 	}
 	summary := fmt.Sprintf(
-		"%s  vs  %s   ·   Jaccard: %.2f%%   Per-func: %.2f%%   Matches: %d/%d",
+		"%s  vs  %s   ·   Similarity: %.2f%%   Matches: %d/%d",
 		nameA, nameB,
-		res.WindowJaccard*100, res.PerFuncSimilarity*100,
+		res.SimilarityPercent,
 		res.WindowMatches, res.WindowUnion,
 	)
 	b.WriteString(statsBox.Render(summary))
