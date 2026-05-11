@@ -24,41 +24,29 @@ func renderOutputMatchLabel(status domain.OutputMatchStatus, diffCount int, diff
 func renderProcessStatusLine(proc *domain.ProcessResult) string {
 	var b strings.Builder
 	switch {
-	case proc.Running:
-		b.WriteString(components.Highlight.Render("[RUNNING]"))
-		b.WriteString(components.SubtleText.Render(" ..."))
 	case proc.Killed:
 		b.WriteString(components.WarningText.Render("[KILLED]"))
-		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	case proc.TimedOut:
 		b.WriteString(components.ErrorText.Render("[TIMEOUT]"))
-		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	case proc.ExpectedExit != nil:
-		if proc.Passed {
-			b.WriteString(components.SuccessText.Render(fmt.Sprintf("[PASS] exit %d", proc.ExitCode)))
-		} else {
-			b.WriteString(components.ErrorText.Render(fmt.Sprintf("[FAIL] exit %d (expected %d)", proc.ExitCode, *proc.ExpectedExit)))
-		}
-		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
-	case proc.ExitCode == 0:
-		b.WriteString(components.SuccessText.Render(fmt.Sprintf("[OK] exit %d", proc.ExitCode)))
-		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+	case proc.Passed:
+		b.WriteString(components.SuccessText.Render("[PASS]"))
 	default:
-		b.WriteString(components.WarningText.Render(fmt.Sprintf("[EXIT %d]", proc.ExitCode)))
-		b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
+		b.WriteString(components.ErrorText.Render("[FAIL]"))
 	}
+	b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", proc.Duration.Milliseconds())))
 	b.WriteString(renderOutputMatchLabel(proc.OutputMatch, len(proc.OutputDiff), ""))
 	return b.String()
 }
 
 func renderExecuteStatusLine(r domain.ExecuteResult) string {
 	var b strings.Builder
-	if r.TimedOut {
+	switch {
+	case r.TimedOut:
 		b.WriteString(components.ErrorText.Render("[TIMEOUT] Execution timed out"))
-	} else if r.ExitCode == 0 {
-		b.WriteString(components.SuccessText.Render(fmt.Sprintf("[OK] exit %d", r.ExitCode)))
-	} else {
-		b.WriteString(components.WarningText.Render(fmt.Sprintf("[EXIT %d]", r.ExitCode)))
+	case r.Passed:
+		b.WriteString(components.SuccessText.Render("[OK]"))
+	default:
+		b.WriteString(components.WarningText.Render("[FAIL]"))
 	}
 	b.WriteString(components.SubtleText.Render(fmt.Sprintf(" %dms", r.Duration.Milliseconds())))
 	b.WriteString(renderOutputMatchLabel(r.OutputMatch, len(r.OutputDiff), " diffs"))

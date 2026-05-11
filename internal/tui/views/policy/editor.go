@@ -890,12 +890,6 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 					if args := e.testCaseInputs.args.Value(); args != "" {
 						tc.Args = strings.Fields(args)
 					}
-					if exitStr := e.testCaseInputs.expectedExit.Value(); exitStr != "" {
-						var exitCode int
-						if _, err := fmt.Sscanf(exitStr, "%d", &exitCode); err == nil {
-							tc.ExpectedExit = &exitCode
-						}
-					}
 
 					if e.editingTestCaseIdx >= 0 && e.editingTestCaseIdx < len(e.testCases) {
 						e.testCases[e.editingTestCaseIdx] = tc
@@ -1127,7 +1121,6 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 						Name:            e.scenarioInputs.name.Value(),
 						ProcessArgs:     make(map[string][]string),
 						ProcessInputs:   make(map[string]string),
-						ExpectedExits:   make(map[string]int),
 						ExpectedOutputs: make(map[string]string),
 					}
 					if scenario.Name == "" {
@@ -1143,14 +1136,6 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 						if stdinInput, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
 							if stdin := stdinInput.Value(); stdin != "" {
 								scenario.ProcessInputs[proc.Name] = stdin
-							}
-						}
-						if exitInput, ok := e.scenarioInputs.processExit[proc.Name]; ok {
-							if exitStr := exitInput.Value(); exitStr != "" {
-								var exitCode int
-								if _, err := fmt.Sscanf(exitStr, "%d", &exitCode); err == nil {
-									scenario.ExpectedExits[proc.Name] = exitCode
-								}
 							}
 						}
 						if expOut, ok := e.scenarioInputs.expectedOutputs[proc.Name]; ok && expOut != "" {
@@ -1294,12 +1279,6 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 								e.scenarioInputs.processStdin[proc.Name] = input
 							}
 						}
-						if exit, ok := scenario.ExpectedExits[proc.Name]; ok {
-							if input, exists := e.scenarioInputs.processExit[proc.Name]; exists {
-								input.SetValue(fmt.Sprintf("%d", exit))
-								e.scenarioInputs.processExit[proc.Name] = input
-							}
-						}
 						if expOut, ok := scenario.ExpectedOutputs[proc.Name]; ok {
 							e.scenarioInputs.expectedOutputs[proc.Name] = expOut
 						}
@@ -1376,11 +1355,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 					e.testCaseInputs.name.SetValue(tc.Name)
 					e.testCaseInputs.args.SetValue(strings.Join(tc.Args, " "))
 					e.testCaseInputs.input.SetValue(tc.Input)
-					if tc.ExpectedExit != nil {
-						e.testCaseInputs.expectedExit.SetValue(fmt.Sprintf("%d", *tc.ExpectedExit))
-					} else {
-						e.testCaseInputs.expectedExit.SetValue("0")
-					}
+					e.testCaseInputs.expectedExit.SetValue("0")
 					e.testCaseInputs.expectedOutputFile = tc.ExpectedOutputFile
 					e.testCaseInputs.focusedInput = 0
 					e.testCaseInputs.name.Focus()
@@ -1619,7 +1594,6 @@ func (e *Editor) save() tea.Cmd {
 			Name               string   `yaml:"name,omitempty"`
 			Args               []string `yaml:"args,omitempty"`
 			Input              string   `yaml:"input,omitempty"`
-			ExpectedExit       *int     `yaml:"expected_exit,omitempty"`
 			ExpectedOutputFile string   `yaml:"expected_output_file,omitempty"`
 		}
 
@@ -1645,7 +1619,6 @@ func (e *Editor) save() tea.Cmd {
 						Name            string              `yaml:"name"`
 						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
 						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
 						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					} `yaml:"test_scenarios,omitempty"`
 				} `yaml:"multi_process,omitempty"`
@@ -1667,7 +1640,6 @@ func (e *Editor) save() tea.Cmd {
 					Name:               tc.Name,
 					Args:               tc.Args,
 					Input:              tc.Input,
-					ExpectedExit:       tc.ExpectedExit,
 					ExpectedOutputFile: tc.ExpectedOutputFile,
 				})
 			}
@@ -1686,7 +1658,6 @@ func (e *Editor) save() tea.Cmd {
 						Name            string              `yaml:"name"`
 						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
 						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
 						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					} `yaml:"test_scenarios,omitempty"`
 				}{
@@ -1712,13 +1683,11 @@ func (e *Editor) save() tea.Cmd {
 						Name            string              `yaml:"name"`
 						ProcessArgs     map[string][]string `yaml:"process_args,omitempty"`
 						ProcessInputs   map[string]string   `yaml:"process_inputs,omitempty"`
-						ExpectedExits   map[string]int      `yaml:"expected_exits,omitempty"`
 						ExpectedOutputs map[string]string   `yaml:"expected_outputs,omitempty"`
 					}{
 						Name:            scenario.Name,
 						ProcessArgs:     scenario.ProcessArgs,
 						ProcessInputs:   scenario.ProcessInputs,
-						ExpectedExits:   scenario.ExpectedExits,
 						ExpectedOutputs: scenario.ExpectedOutputs,
 					})
 				}
