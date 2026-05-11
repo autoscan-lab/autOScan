@@ -81,7 +81,7 @@ type Editor struct {
 		name               textinput.Model
 		args               textinput.Model
 		input              textinput.Model
-		expectedExit       textinput.Model
+		producedFile       textinput.Model
 		expectedOutputFile string
 		focusedInput       int
 	}
@@ -107,7 +107,6 @@ type Editor struct {
 		name            textinput.Model
 		processArgs     map[string]textinput.Model
 		processStdin    map[string]textinput.Model
-		processExit     map[string]textinput.Model
 		expectedOutputs map[string]string // file paths per process
 		focusedIdx      int
 	}
@@ -151,10 +150,10 @@ func NewEditor(width, height int) Editor {
 	tcInputInput.CharLimit = 500
 	tcInputInput.Width = 40
 
-	tcExitInput := textinput.New()
-	tcExitInput.Placeholder = "0"
-	tcExitInput.CharLimit = 5
-	tcExitInput.Width = 10
+	tcProducedFileInput := textinput.New()
+	tcProducedFileInput.Placeholder = "report.txt (leave empty to compare stdout)"
+	tcProducedFileInput.CharLimit = 200
+	tcProducedFileInput.Width = 40
 
 	procNameInput := textinput.New()
 	procNameInput.Placeholder = "Producer"
@@ -198,7 +197,7 @@ func NewEditor(width, height int) Editor {
 	pe.testCaseInputs.name = tcNameInput
 	pe.testCaseInputs.args = tcArgsInput
 	pe.testCaseInputs.input = tcInputInput
-	pe.testCaseInputs.expectedExit = tcExitInput
+	pe.testCaseInputs.producedFile = tcProducedFileInput
 
 	pe.processInputs.name = procNameInput
 	pe.processInputs.sourceFile = procSourceInput
@@ -208,7 +207,6 @@ func NewEditor(width, height int) Editor {
 	pe.scenarioInputs.name = scenarioNameInput
 	pe.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	pe.scenarioInputs.processStdin = make(map[string]textinput.Model)
-	pe.scenarioInputs.processExit = make(map[string]textinput.Model)
 	pe.scenarioInputs.expectedOutputs = make(map[string]string)
 
 	return pe
@@ -305,13 +303,13 @@ func (e *Editor) resetTestCaseInputs() {
 	e.testCaseInputs.name.SetValue("")
 	e.testCaseInputs.args.SetValue("")
 	e.testCaseInputs.input.SetValue("")
-	e.testCaseInputs.expectedExit.SetValue("0")
+	e.testCaseInputs.producedFile.SetValue("")
 	e.testCaseInputs.expectedOutputFile = ""
 	e.testCaseInputs.focusedInput = 0
 	e.testCaseInputs.name.Focus()
 	e.testCaseInputs.args.Blur()
 	e.testCaseInputs.input.Blur()
-	e.testCaseInputs.expectedExit.Blur()
+	e.testCaseInputs.producedFile.Blur()
 }
 
 func (e *Editor) resetProcessInputs() {
@@ -333,7 +331,6 @@ func (e *Editor) resetScenarioInputs() {
 	e.scenarioInputs.focusedIdx = 0
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
-	e.scenarioInputs.processExit = make(map[string]textinput.Model)
 	e.scenarioInputs.expectedOutputs = make(map[string]string)
 	e.scenarioExpectedOutputProcess = ""
 }
@@ -341,7 +338,6 @@ func (e *Editor) resetScenarioInputs() {
 func (e *Editor) initScenarioProcessInputs() {
 	e.scenarioInputs.processArgs = make(map[string]textinput.Model)
 	e.scenarioInputs.processStdin = make(map[string]textinput.Model)
-	e.scenarioInputs.processExit = make(map[string]textinput.Model)
 	if e.scenarioInputs.expectedOutputs == nil {
 		e.scenarioInputs.expectedOutputs = make(map[string]string)
 	}
@@ -358,12 +354,6 @@ func (e *Editor) initScenarioProcessInputs() {
 		stdinInput.CharLimit = 500
 		stdinInput.Width = 30
 		e.scenarioInputs.processStdin[proc.Name] = stdinInput
-
-		exitInput := textinput.New()
-		exitInput.Placeholder = "0"
-		exitInput.CharLimit = 5
-		exitInput.Width = 10
-		e.scenarioInputs.processExit[proc.Name] = exitInput
 	}
 }
 
@@ -379,23 +369,18 @@ func (e *Editor) blurAllScenarioInputs() {
 		input.Blur()
 		e.scenarioInputs.processStdin[name] = input
 	}
-	for name := range e.scenarioInputs.processExit {
-		input := e.scenarioInputs.processExit[name]
-		input.Blur()
-		e.scenarioInputs.processExit[name] = input
-	}
 }
 
 func (e *Editor) focusCurrentScenarioInput() {
 	numProcesses := len(e.multiProcessExecs)
-	totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
+	totalFields := 1 + (numProcesses * 3) + 1 // name + (3 fields per process) + save
 
 	if e.scenarioInputs.focusedIdx == 0 {
 		e.scenarioInputs.name.Focus()
 	} else if e.scenarioInputs.focusedIdx < totalFields-1 {
 		fieldOffset := e.scenarioInputs.focusedIdx - 1
-		procIdx := fieldOffset / 4
-		fieldType := fieldOffset % 4
+		procIdx := fieldOffset / 3
+		fieldType := fieldOffset % 3
 
 		if procIdx < len(e.multiProcessExecs) {
 			procName := e.multiProcessExecs[procIdx].Name
@@ -410,12 +395,7 @@ func (e *Editor) focusCurrentScenarioInput() {
 					input.Focus()
 					e.scenarioInputs.processStdin[procName] = input
 				}
-			case 2: // exit
-				if input, ok := e.scenarioInputs.processExit[procName]; ok {
-					input.Focus()
-					e.scenarioInputs.processExit[procName] = input
-				}
-			case 3: // expected output - display only, no text input to focus
+			case 2: // expected output - display only, no text input to focus
 			}
 		}
 	}
@@ -824,7 +804,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 				e.testCaseInputs.name.Blur()
 				e.testCaseInputs.args.Blur()
 				e.testCaseInputs.input.Blur()
-				e.testCaseInputs.expectedExit.Blur()
+				e.testCaseInputs.producedFile.Blur()
 				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 1) % 6
 				switch e.testCaseInputs.focusedInput {
 				case 0:
@@ -834,14 +814,14 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 				case 2:
 					e.testCaseInputs.input.Focus()
 				case 3:
-					e.testCaseInputs.expectedExit.Focus()
+					e.testCaseInputs.producedFile.Focus()
 				}
 				return nil
 			case "shift+tab", "up":
 				e.testCaseInputs.name.Blur()
 				e.testCaseInputs.args.Blur()
 				e.testCaseInputs.input.Blur()
-				e.testCaseInputs.expectedExit.Blur()
+				e.testCaseInputs.producedFile.Blur()
 				e.testCaseInputs.focusedInput = (e.testCaseInputs.focusedInput + 5) % 6
 				switch e.testCaseInputs.focusedInput {
 				case 0:
@@ -851,7 +831,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 				case 2:
 					e.testCaseInputs.input.Focus()
 				case 3:
-					e.testCaseInputs.expectedExit.Focus()
+					e.testCaseInputs.producedFile.Focus()
 				}
 				return nil
 			case "a":
@@ -882,6 +862,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 					tc := policy.TestCase{
 						Name:               e.testCaseInputs.name.Value(),
 						Input:              e.testCaseInputs.input.Value(),
+						ProducedFile:       strings.TrimSpace(e.testCaseInputs.producedFile.Value()),
 						ExpectedOutputFile: e.testCaseInputs.expectedOutputFile,
 					}
 					if tc.Name == "" {
@@ -912,7 +893,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			case 2:
 				e.testCaseInputs.input, cmd = e.testCaseInputs.input.Update(msg)
 			case 3:
-				e.testCaseInputs.expectedExit, cmd = e.testCaseInputs.expectedExit.Update(msg)
+				e.testCaseInputs.producedFile, cmd = e.testCaseInputs.producedFile.Update(msg)
 			}
 			return cmd
 		}
@@ -1058,16 +1039,16 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			numProcesses := len(e.multiProcessExecs)
-			totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
+			totalFields := 1 + (numProcesses * 3) + 1 // name + (3 fields per process) + save
 
 			// Check if we're on an expected output field
 			isOnExpectedOutput := false
 			var currentProcName string
 			if e.scenarioInputs.focusedIdx > 0 && e.scenarioInputs.focusedIdx < totalFields-1 {
 				fieldOffset := e.scenarioInputs.focusedIdx - 1
-				procIdx := fieldOffset / 4
-				fieldType := fieldOffset % 4
-				if fieldType == 3 && procIdx < len(e.multiProcessExecs) {
+				procIdx := fieldOffset / 3
+				fieldType := fieldOffset % 3
+				if fieldType == 2 && procIdx < len(e.multiProcessExecs) {
 					isOnExpectedOutput = true
 					currentProcName = e.multiProcessExecs[procIdx].Name
 				}
@@ -1161,8 +1142,8 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 				e.scenarioInputs.name, cmd = e.scenarioInputs.name.Update(msg)
 			} else if e.scenarioInputs.focusedIdx < totalFields-1 && !isOnExpectedOutput {
 				fieldOffset := e.scenarioInputs.focusedIdx - 1
-				procIdx := fieldOffset / 4
-				fieldType := fieldOffset % 4
+				procIdx := fieldOffset / 3
+				fieldType := fieldOffset % 3
 
 				if procIdx < len(e.multiProcessExecs) {
 					procName := e.multiProcessExecs[procIdx].Name
@@ -1174,10 +1155,6 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 					case 1: // stdin
 						if input, ok := e.scenarioInputs.processStdin[procName]; ok {
 							e.scenarioInputs.processStdin[procName], cmd = input.Update(msg)
-						}
-					case 2: // exit
-						if input, ok := e.scenarioInputs.processExit[procName]; ok {
-							e.scenarioInputs.processExit[procName], cmd = input.Update(msg)
 						}
 					}
 				}
@@ -1355,7 +1332,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 					e.testCaseInputs.name.SetValue(tc.Name)
 					e.testCaseInputs.args.SetValue(strings.Join(tc.Args, " "))
 					e.testCaseInputs.input.SetValue(tc.Input)
-					e.testCaseInputs.expectedExit.SetValue("0")
+					e.testCaseInputs.producedFile.SetValue(tc.ProducedFile)
 					e.testCaseInputs.expectedOutputFile = tc.ExpectedOutputFile
 					e.testCaseInputs.focusedInput = 0
 					e.testCaseInputs.name.Focus()
@@ -1594,6 +1571,7 @@ func (e *Editor) save() tea.Cmd {
 			Name               string   `yaml:"name,omitempty"`
 			Args               []string `yaml:"args,omitempty"`
 			Input              string   `yaml:"input,omitempty"`
+			ProducedFile       string   `yaml:"produced_file,omitempty"`
 			ExpectedOutputFile string   `yaml:"expected_output_file,omitempty"`
 		}
 
@@ -1640,6 +1618,7 @@ func (e *Editor) save() tea.Cmd {
 					Name:               tc.Name,
 					Args:               tc.Args,
 					Input:              tc.Input,
+					ProducedFile:       tc.ProducedFile,
 					ExpectedOutputFile: tc.ExpectedOutputFile,
 				})
 			}
@@ -1826,10 +1805,10 @@ func (e *Editor) View() string {
 			"                   (use \\n for newlines)",
 		))
 		content.WriteString(e.renderInputRow(
-			"Expected Exit: ",
+			"Produced File: ",
 			e.testCaseInputs.focusedInput == 3,
-			e.testCaseInputs.expectedExit,
-			"",
+			e.testCaseInputs.producedFile,
+			"                   (file the program writes; empty = compare stdout)",
 		))
 		content.WriteString(e.renderValueRow(
 			"Expected Output: ",
@@ -1886,7 +1865,7 @@ func (e *Editor) View() string {
 		}
 
 		numProcesses := len(e.multiProcessExecs)
-		totalFields := 1 + (numProcesses * 4) + 1 // name + (4 fields per process) + save
+		totalFields := 1 + (numProcesses * 3) + 1 // name + (3 fields per process) + save
 		saveIdx := totalFields - 1
 
 		box := components.BoxStyle(90)
@@ -1905,19 +1884,15 @@ func (e *Editor) View() string {
 			content.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%s)", proc.SourceFile)))
 			content.WriteString("\n")
 
-			argsIdx := 1 + (i * 4)
-			stdinIdx := 2 + (i * 4)
-			exitIdx := 3 + (i * 4)
-			expOutIdx := 4 + (i * 4)
+			argsIdx := 1 + (i * 3)
+			stdinIdx := 2 + (i * 3)
+			expOutIdx := 3 + (i * 3)
 
 			if input, ok := e.scenarioInputs.processArgs[proc.Name]; ok {
 				content.WriteString(e.renderInputRowTight("    Args:     ", e.scenarioInputs.focusedIdx == argsIdx, input))
 			}
 			if input, ok := e.scenarioInputs.processStdin[proc.Name]; ok {
 				content.WriteString(e.renderInputRowTight("    Stdin:    ", e.scenarioInputs.focusedIdx == stdinIdx, input))
-			}
-			if input, ok := e.scenarioInputs.processExit[proc.Name]; ok {
-				content.WriteString(e.renderInputRowTight("    Exit:     ", e.scenarioInputs.focusedIdx == exitIdx, input))
 			}
 			if expOut, ok := e.scenarioInputs.expectedOutputs[proc.Name]; ok {
 				content.WriteString(e.renderValueRowTight("    Expected: ", e.scenarioInputs.focusedIdx == expOutIdx, expOut, "(none)"))
@@ -1943,7 +1918,7 @@ func (e *Editor) View() string {
 		isOnExpectedOutput := false
 		if e.scenarioInputs.focusedIdx > 0 && e.scenarioInputs.focusedIdx < saveIdx {
 			fieldOffset := e.scenarioInputs.focusedIdx - 1
-			if fieldOffset%4 == 3 {
+			if fieldOffset%3 == 2 {
 				isOnExpectedOutput = true
 			}
 		}
