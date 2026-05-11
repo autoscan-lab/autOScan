@@ -81,8 +81,6 @@ type (
 	executeResultMsg      struct{ result domain.ExecuteResult }
 	executeTestResultsMsg struct{ results []domain.ExecuteResult }
 	multiProcessResultMsg struct{ result *domain.MultiProcessResult }
-	multiProcessUpdateMsg struct{ result *domain.MultiProcessResult }
-	multiProcessTickMsg   struct{}
 	similarityStartedMsg  struct {
 		process string
 		runID   int64
@@ -190,12 +188,11 @@ type Model struct {
 	runTestResults         []domain.ExecuteResult
 	isExecuting            bool
 	executor               *engine.Executor
-	multiProcessResult     *domain.MultiProcessResult
-	showMultiProcess       bool
-	runCancelFunc          context.CancelFunc
-	multiProcessUpdateChan <-chan *domain.MultiProcessResult
-	outputScroll           int
-	selectedProcessIdx     int
+	multiProcessResult *domain.MultiProcessResult
+	showMultiProcess   bool
+	runCancelFunc      context.CancelFunc
+	outputScroll       int
+	selectedProcessIdx int
 
 	submissionsTab           int
 	similarityProcessNames   []string

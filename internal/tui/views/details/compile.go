@@ -22,7 +22,7 @@ func renderCompileTab(s State) string {
 	} else if r.Compile.TimedOut {
 		b.WriteString(components.ErrorText.Render("[TIMEOUT] Compilation timed out (5s limit)"))
 	} else {
-		b.WriteString(components.ErrorText.Render(fmt.Sprintf("[FAIL] Compilation failed (exit %d)", r.Compile.ExitCode)))
+		b.WriteString(components.ErrorText.Render("[FAIL] Compilation failed"))
 	}
 	b.WriteString("\n\n")
 

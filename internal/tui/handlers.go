@@ -335,15 +335,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isExecuting = false
 		m.showMultiProcess = true
-		m.multiProcessUpdateChan = nil
-		return m, nil
-
-	case multiProcessUpdateMsg:
-		m.multiProcessResult = msg.result
-		m.showMultiProcess = true
-		if m.multiProcessUpdateChan != nil {
-			return m, waitForMultiProcessUpdates(m.multiProcessUpdateChan)
-		}
 		return m, nil
 	}
 
@@ -1122,27 +1113,10 @@ func (m *Model) executeMultiProcess() tea.Cmd {
 	m.selectedProcessIdx = -1
 	m.outputScroll = 0
 
-	updateChan := make(chan *domain.MultiProcessResult, 100)
-	m.multiProcessUpdateChan = updateChan
-
-	go func() {
-		result := executor.ExecuteMultiProcess(ctx, sub, func(r *domain.MultiProcessResult) {
-			copyResult := copyMultiProcessResult(r)
-			select {
-			case updateChan <- copyResult:
-			default:
-			}
-		})
-		if result != nil {
-			select {
-			case updateChan <- result:
-			default:
-			}
-		}
-		close(updateChan)
-	}()
-
-	return waitForMultiProcessUpdates(updateChan)
+	return func() tea.Msg {
+		result := executor.ExecuteMultiProcess(ctx, sub)
+		return multiProcessResultMsg{result: result}
+	}
 }
 
 func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
@@ -1177,57 +1151,8 @@ func (m *Model) executeMultiProcessScenario(scenarioIdx int) tea.Cmd {
 	m.selectedProcessIdx = -1
 	m.outputScroll = 0
 
-	updateChan := make(chan *domain.MultiProcessResult, 100)
-	m.multiProcessUpdateChan = updateChan
-
-	go func() {
-		result := executor.ExecuteMultiProcessScenario(ctx, sub, scenario, func(r *domain.MultiProcessResult) {
-			copyResult := copyMultiProcessResult(r)
-			select {
-			case updateChan <- copyResult:
-			default:
-			}
-		})
-		if result != nil {
-			select {
-			case updateChan <- result:
-			default:
-			}
-		}
-		close(updateChan)
-	}()
-
-	return waitForMultiProcessUpdates(updateChan)
-}
-
-func waitForMultiProcessUpdates(updateChan <-chan *domain.MultiProcessResult) tea.Cmd {
 	return func() tea.Msg {
-		result, ok := <-updateChan
-		if !ok {
-			return multiProcessResultMsg{result: nil}
-		}
-		if result.AllCompleted {
-			return multiProcessResultMsg{result: result}
-		}
-		return multiProcessUpdateMsg{result: result}
+		result := executor.ExecuteMultiProcessScenario(ctx, sub, scenario)
+		return multiProcessResultMsg{result: result}
 	}
-}
-
-func copyMultiProcessResult(r *domain.MultiProcessResult) *domain.MultiProcessResult {
-	if r == nil {
-		return nil
-	}
-	copy := &domain.MultiProcessResult{
-		Processes:     make(map[string]*domain.ProcessResult),
-		Order:         append([]string{}, r.Order...),
-		TotalDuration: r.TotalDuration,
-		AllCompleted:  r.AllCompleted,
-		AllPassed:     r.AllPassed,
-		ScenarioName:  r.ScenarioName,
-	}
-	for name, proc := range r.Processes {
-		procCopy := *proc
-		copy.Processes[name] = &procCopy
-	}
-	return copy
 }

@@ -139,7 +139,7 @@ func renderSingleProcessMode(s State) string {
 			} else {
 				b.WriteString(components.ErrorText.Render(fmt.Sprintf("  [FAIL] %s", name)))
 			}
-			b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (exit %d, %dms)", tr.ExitCode, tr.Duration.Milliseconds())))
+			b.WriteString(components.SubtleText.Render(fmt.Sprintf(" (%dms)", tr.Duration.Milliseconds())))
 			b.WriteString("\n")
 		}
 	}
@@ -214,28 +214,19 @@ func renderMultiProcessGrid(s State) string {
 	b.WriteString("\n")
 	b.WriteString(components.SubtleText.Render(fmt.Sprintf("Total: %dms", s.MultiProcessResult.TotalDuration.Milliseconds())))
 
-	anyRunning := false
 	anyKilled := false
 	for _, pr := range s.MultiProcessResult.Processes {
-		if pr.Running {
-			anyRunning = true
-		}
 		if pr.Killed {
 			anyKilled = true
 		}
 	}
 
-	if anyRunning {
-		b.WriteString(components.PrimaryText.Render(" [RUNNING...]"))
-		b.WriteString(components.SubtleText.Render(" (Ctrl+K to kill)"))
-	} else if s.MultiProcessResult.AllPassed {
+	if s.MultiProcessResult.AllPassed {
 		b.WriteString(components.SuccessText.Render(" [ALL PASSED]"))
 	} else if anyKilled {
 		b.WriteString(components.WarningText.Render(" [KILLED]"))
-	} else if !s.MultiProcessResult.AllPassed {
-		b.WriteString(components.WarningText.Render(" [Some failed]"))
 	} else {
-		b.WriteString(components.ErrorText.Render(" [Incomplete]"))
+		b.WriteString(components.WarningText.Render(" [Some failed]"))
 	}
 	b.WriteString("\n\n")
 
@@ -325,16 +316,12 @@ func renderProcessBox(s State, proc *domain.ProcessResult, width int, isSelected
 		borderColor = components.Accent
 	} else if isSelected {
 		borderColor = components.PrimaryGlow
-	} else if proc.Running {
-		borderColor = components.Primary
 	} else if proc.Killed {
 		borderColor = components.Warning
-	} else if proc.ExpectedExit != nil {
-		if proc.Passed {
-			borderColor = components.Success
-		} else {
-			borderColor = components.Error
-		}
+	} else if proc.Passed {
+		borderColor = components.Success
+	} else {
+		borderColor = components.Error
 	}
 
 	contentWidth := width - 4
@@ -432,7 +419,7 @@ func renderExecuteResult(s State) string {
 		borderColor = components.Accent
 	} else if isSelected {
 		borderColor = components.PrimaryGlow
-	} else if r.ExitCode == 0 && !r.TimedOut {
+	} else if r.Passed && !r.TimedOut {
 		borderColor = components.Success
 	} else {
 		borderColor = components.Warning
